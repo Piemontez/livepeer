@@ -11,18 +11,18 @@
 |
 */
 
-Route::get('/', function () {
+Route::get('/', ['as' => 'home', function () {
 	return view('welcome');
-});
+}]);
 
-Route::get('/onlineteste', function () {
-	return view('onlineteste.index');
-});
+Route::get('/onlinetest', ['as' => 'onlinetest', function () {
+	return view('onlinetest.index');
+}]);
 
-Route::get('/onlineteste/leftside', function () {
-	return view('onlineteste.leftside');
-});
+Route::get('/onlinetest/leftside',  ['as' => 'leftsidetest', function () {
+	return view('onlinetest.leftside');
+}]);
 
-Route::get('/onlineteste/rightside', function () {
-	return view('onlineteste.rightside');
-});
+Route::get('/onlinetest/rightside',  ['as' => 'rightsidetest', function () {
+	return view('onlinetest.rightside');
+}]);

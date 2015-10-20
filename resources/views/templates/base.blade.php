@@ -10,8 +10,7 @@
     <link rel="stylesheet" href="/css/font-awesome.min.css">
 
     <!-- Bootstrap -->
-    <link href="css/bootstrap.min.css" rel="stylesheet">
-
+    <link href="/css/bootstrap-theme.min.css" rel="stylesheet">
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
     <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
     <!--[if lt IE 9]>
@@ -30,7 +29,7 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <a class="navbar-brand" href="#">LivePeer</a>
+          <a class="navbar-brand" href="{{ URL::route('home') }}">LivePeer</a>
         </div>
 
         <div id="navbar" class="navbar-collapse navbar-right collapse">
@@ -42,7 +41,7 @@
 
         <div id="navbar" class="collapse navbar-collapse">
           <ul class="nav navbar-nav">
-            <li class="active"><a href="#contact">Teste online</a></li>
+            <li class="active"><a href="{{ URL::route('onlinetest') }}">Teste online</a></li>
           </ul>
         </div><!--/.nav-collapse -->
         
@@ -50,9 +49,8 @@
     </nav>
     @show
 
-    @section('container')
-    @show
-    
+    @yield('container')
+
     @section('footer')
 	<div class="container">
       <hr>
@@ -65,6 +63,6 @@
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
-    <script src="js/bootstrap.min.js"></script>
+    <script src="/js/bootstrap.min.js"></script>
   </body>
 </html>
