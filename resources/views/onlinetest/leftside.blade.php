@@ -61,3 +61,10 @@
       </div>
     </div><!-- /container -->
 	@endsection
+	
+@section('postjs')
+<script src="/js/livepeer/livepeer_0_0.js"></script>
+<script type="text/javascript">
+	
+</script>
+@endsection	
