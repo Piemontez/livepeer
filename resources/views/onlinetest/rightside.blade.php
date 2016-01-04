@@ -61,6 +61,7 @@
 	@endsection
 	
 @section('postjs')
+<script src="/js/livepeer/adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script type="text/javascript">
 document.querySelector('a#escutar').onclick = function(e) {

@@ -8,8 +8,15 @@
 
 var LP = this.LP = function() {};
 var isTrace = true;
-var servers = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
-var constraints = {
+var servers = null; a= {
+	"iceServers": [
+		{"url": "stun:stun.l.google.com:19302"}
+	]
+};
+var pcConstraints = {
+	'optional': []
+};
+var mediaConstraints = {
     video: false,
     audio: true
 };
@@ -63,7 +70,7 @@ LP.LivePeer.init = function(obj, type) {
 		obj.peer.initRTCPeerConnection();
 
 		if (this.type == "radio") {
-			obj.peer.initRadio();
+			//obj.peer.initRadio();
 		}
 		else if (this.type == "player") {
 			obj.peer.initPlayer();
@@ -78,14 +85,8 @@ LP.LivePeer.prototype = {
 	initRTCPeerConnection: function() {
 		trace(this.obj, 'Starting RTCPeerConnection');
 
-		//crossbrowser
-		var RTCPeerConnection = window.RTCPeerConnection || 
-			window.webkitRTCPeerConnection || 
-			window.mozRTCPeerConnection || 
-			window.msRTCPeerConnection;
-		
 		var obj = this.obj;
-		obj.peer.peerConnection = new RTCPeerConnection(servers);
+		obj.peer.peerConnection = new RTCPeerConnection(servers, pcConstraints);
 		obj.peer.peerConnection.onicecandidate = function(event) {
 			obj.peer.peerConnectionIceCallback(event);
 		};
@@ -101,7 +102,8 @@ LP.LivePeer.prototype = {
 		if (event.candidate) {
 			trace(obj, 'ICE candidate' + event.candidate.candidate);
 
-			this.peerConnection.addIceCandidate(new RTCIceCandidate(event.candidate),
+			//TODO
+			obj.remote.peer.peerConnection.addIceCandidate(new RTCIceCandidate(event.candidate),
 				function() {
 					trace(obj, 'ICE candidate added');
 				}, 
@@ -116,22 +118,29 @@ LP.LivePeer.prototype = {
 		this.obj.peer.sendSuccessCallback(event);
 	},
 	
+	setRemote: function(remote) {
+		this.obj.remote = remote;
+		this;
+	},
+	
 	createAnswer: function(remote) {
 		var obj = this.obj;
 		trace(obj, 'Creating answer');
 
 		obj.peer.peerConnection.setRemoteDescription(remote.peer.description(), function() {
-			/*obj.peer.peerConnection.createAnswer(function (desc) {
+			obj.peer.peerConnection.createAnswer(function (desc) {
+				
 				obj.peer.peerDescription = desc;
 				obj.peer.peerConnection.setLocalDescription(desc, function() {
-					trace(obj, 'Answer created');
-					remote.peer.peerConnection.setRemoteDescription(desc);
+					trace(obj, 'Answer created\n' + desc.sdp);
+
+					remote.peer.peerConnection.setRemoteDescription(desc, function() {});
 				}, function(err){
 					console.err(err);
 				});
 			}, function(err){
 				console.err(err);
-			});*/
+			});
 		}, function(err){
 			console.err(err);
 		});
@@ -160,18 +169,12 @@ LP.LivePeer.prototype = {
 		var obj = this.obj;
 		trace(obj, 'Get user media');
 
-		//crossbrowser
-		navigator.getUserMedia = ( navigator.getUserMedia ||
-		        navigator.webkitGetUserMedia ||
-		        navigator.mozGetUserMedia ||
-		        navigator.msGetUserMedia);
-
-		navigator.getUserMedia(constraints, 
-			function(lmStream) {
-				obj.peer.microphoneInputCallbackSucesso(lmStream); 
-			},
-			this.microphoneInputCallbackErro
-		);
+		navigator.mediaDevices.getUserMedia(mediaConstraints)
+		.then( 
+		function(lmStream) {
+			obj.peer.microphoneInputCallbackSucesso(lmStream); 
+		})
+		.catch(this.microphoneInputCallbackErro);
 	},
 
 	microphoneInputCallbackSucesso: function(lmStream) {
@@ -185,13 +188,21 @@ LP.LivePeer.prototype = {
 
 	receiveSuccessCallback: function(localStream) {
 		var obj = this.obj;
+		
 		trace(obj, 'Adding Local Stream to peer connection');
-
 		obj.peer.peerConnection.addStream(localStream);
+
 		obj.peer.peerConnection.createOffer(function(desc) {
-			obj.peer.peerDescription = desc;
-			obj.peer.peerConnection.setLocalDescription(desc);
-		}, function (err){}, offerOptions);
+
+				trace(obj, 'Create Offer for peer connection\n' + desc.sdp);
+				obj.peer.peerDescription = desc;
+				obj.peer.peerConnection.setLocalDescription(desc);
+			}, 
+			function (err) {
+				console.err(err);
+			}, 
+			offerOptions
+		);
 	},
 	
 	/*
@@ -202,11 +213,13 @@ LP.LivePeer.prototype = {
 	initPlayer: function() {
 		//audio2.srcObject = e.stream;
 
-		phoneOutput = new AudioContext();
+		//phoneOutput = new AudioContext();
 	},
 	sendSuccessCallback: function(event) {
-		var aa = phoneOutput.createMediaStreamSource(event.stream);
-		aa.connect(phoneOutput.destination);				
+		//var aa = phoneOutput.createMediaStreamSource(event.stream);
+		//aa.connect(phoneOutput.destination);
+		var audio2 = document.querySelector('audio#audio2');
+		  audio2.srcObject = event.stream;
 	}
 	
 }
@@ -259,5 +272,5 @@ LP.T = LP.prototype = {
 //Exemplos
 //https://developer.mozilla.org/pt-BR/docs/Web/API/Navigator/getUserMedia
 //http://www.html5rocks.com/en/tutorials/webrtc/basics/?redirect_from_locale=pt
-//https://github.com/webrtc/samples/blob/gh-pages/src/content/peerconnection/audio/js/main.js#L241
 //https://webrtc.github.io/samples/src/content/peerconnection/audio/
+//https://github.com/webrtc/samples/blob/gh-pages/src/content/peerconnection/audio/js/main.js#L241

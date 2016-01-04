@@ -31,6 +31,7 @@
 	            </dl>
 	            </div>
             </div>
+            <audio id="audio2" autoplay controls></audio>
 	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão &raquo;</a>
         </div>
       </div><!-- /row --><br/>
@@ -63,16 +64,23 @@
 	@endsection
 	
 @section('postjs')
+<script src="/js/livepeer/adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script type="text/javascript">
 document.querySelector('a#transmitir').onclick = function(e) {
 	e.preventDefault();
 
 	var radio = {};
+	var player = {};
+
 	LivePeer(radio, "radio");
+	LivePeer(player, "player");
+	radio.peer.initRadio();
+	LivePeer(radio).setRemote(player);
+	LivePeer(player).setRemote(radio);
 
 	setTimeout(function() {
-		LivePeer({}, "player").createAnswer(radio);
+		LivePeer(player).createAnswer(radio);
 	},2000);
 }
 </script>
