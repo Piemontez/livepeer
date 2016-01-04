@@ -58,30 +58,117 @@
           </div>
         </div>
         </div>
+      </div><!-- /row --><br/>
 
-      </div>
+      <div class="row">
+        <div class="col-md-8 col-md-offset-2">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">Ice candidates</h3>
+          </div>
+          <div class="panel-body">
+            <p>...</p>
+            <table class="table table-hover table-condensed">
+        		<thead><tr>
+          		<th>Time</th><th>Component</th><th>Type</th><th>Foundation</th>
+          		<th>Protocol</th><th>Address</th><th>Port</th><th>Priority</th>
+        		</tr></thead>
+        		<tbody id="candidatesBody"></tbody>
+      		</table>
+          </div>
+        </div>
+        </div>
+      </div><!-- /row -->
     </div><!-- /container -->
 	@endsection
 	
 @section('postjs')
-<script src="/js/livepeer/adapter.js"></script>
+<script src="https://webrtc.github.io/samples/src/js/adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script type="text/javascript">
-document.querySelector('a#transmitir').onclick = function(e) {
-	e.preventDefault();
-
+function startPeer()
+{
 	var radio = {};
 	var player = {};
 
 	LivePeer(radio, "radio");
 	LivePeer(player, "player");
-	radio.peer.initRadio();
+	LivePeer(radio).addOnIceCallback(iceCallback);
+
 	LivePeer(radio).setRemote(player);
 	LivePeer(player).setRemote(radio);
 
 	setTimeout(function() {
 		LivePeer(player).createAnswer(radio);
 	},2000);
+}
+
+document.querySelector('a#transmitir').onclick = function(e) {
+	e.preventDefault();
+	startPeer();
+}
+</script>
+
+<script type="text/javascript">
+/**
+ * The next functions created from webrtc
+ * https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/ 
+ */
+function iceCallback(event) {
+  var elapsed = 0; //((window.performance.now() - begin) / 1000).toFixed(3);
+  var row = document.createElement('tr');
+  appendCell(row, elapsed);
+  if (event.candidate) {
+    var c = parseCandidate(event.candidate.candidate);
+    appendCell(row, c.component);
+    appendCell(row, c.type);
+    appendCell(row, c.foundation);
+    appendCell(row, c.protocol);
+    appendCell(row, c.address);
+    appendCell(row, c.port);
+    appendCell(row, formatPriority(c.priority));
+    //candidates.push(c);
+  } else {
+    appendCell(row, 'Done', 7);
+  }
+  document.querySelector('tbody#candidatesBody').appendChild(row);
+}
+//Parse a candidate:foo string into an object, for easier use by other methods.
+function parseCandidate(text) {
+  var candidateStr = 'candidate:';
+  var pos = text.indexOf(candidateStr) + candidateStr.length;
+  var fields = text.substr(pos).split(' ');
+  return {
+    'component': fields[1],
+    'type': fields[7],
+    'foundation': fields[0],
+    'protocol': fields[2],
+    'address': fields[4],
+    'port': fields[5],
+    'priority': fields[3]
+  };
+}
+
+function appendCell(row, val, span) {
+	var cell = document.createElement('td');
+	cell.textContent = val;
+	if (span) {
+	  cell.setAttribute('colspan', span);
+	}
+	row.appendChild(cell);
+}
+
+// Parse the uint32 PRIORITY field into its constituent parts from RFC 5245,
+// type preference, local preference, and (256 - component ID).
+// ex: 126 | 32252 | 255 (126 is host preference, 255 is component ID 1)
+function formatPriority(priority) {
+  var s = '';
+  s += (priority >> 24);
+  s += ' | ';
+  s += (priority >> 8) & 0xFFFF;
+  s += ' | ';
+  s += priority & 0xFF;
+  return s;
 }
 </script>
 @endsection	

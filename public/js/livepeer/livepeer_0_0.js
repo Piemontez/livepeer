@@ -4,11 +4,16 @@
  * Version: 0.1
  */
 
+/**
+ * This Library Required adapter.js for crossbrowser solution
+ * Download adapter.js in https://github.com/webrtc/adapter 
+ */
+
 (function(){
 
 var LP = this.LP = function() {};
 var isTrace = true;
-var servers = null; a= {
+var servers = {
 	"iceServers": [
 		{"url": "stun:stun.l.google.com:19302"}
 	]
@@ -16,14 +21,14 @@ var servers = null; a= {
 var pcConstraints = {
 	'optional': []
 };
-var mediaConstraints = {
-    video: false,
-    audio: true
-};
 var offerOptions = {
 	offerToReceiveAudio: 1,
 	offerToReceiveVideo: 0,
 	voiceActivityDetection: false
+};
+var mediaConstraints = {
+	video: false,
+	audio: true
 };
 
 function trace(obj, msg) {
@@ -48,9 +53,11 @@ LivePeer = this.LivePeer = function(obj, type) {
 LP.LivePeer = function(obj, type) {
 	this.obj 				= obj;
 	this.type				= type;
+	this.websocket			= null;
 	this.peerConnection		= null;
 	this.peerDescription	= null;
 	this.localMediaStream	= null;
+	this.iceCallbacks		= [];
 }
 
 LP.LivePeer.init = function(obj, type) {
@@ -70,7 +77,7 @@ LP.LivePeer.init = function(obj, type) {
 		obj.peer.initRTCPeerConnection();
 
 		if (this.type == "radio") {
-			//obj.peer.initRadio();
+			obj.peer.initRadio();
 		}
 		else if (this.type == "player") {
 			obj.peer.initPlayer();
@@ -82,13 +89,68 @@ LP.LivePeer.init = function(obj, type) {
 }
 
 LP.LivePeer.prototype = {
+
+	/*
+	 * Web Sockect 
+	 */
+	initWebSockect: function() {
+		trace(this.obj, 'Starting Web Sockect');
+
+		var obj = this.obj;
+
+	    websocket = new WebSocket(wsUri);
+	    //websocket.onopen = function(evt) { onOpen(evt) };
+	    //websocket.onclose = function(evt) { onClose(evt) };
+	    websocket.onmessage = function(evt) { 
+	    	obj.peer.onmessage(evt);
+	    };
+	    //websocket.onerror = function(evt) { onError(evt) };
+	},
+
+	onmessage: function (evt) {
+		if (!pc)
+		    start();
+		
+		var message = JSON.parse(evt.data);
+		if (message.sdp) {
+		    var desc = new RTCSessionDescription(message.sdp);
+		
+		    // if we get an offer, we need to reply with an answer
+		    if (desc.type == "offer") {
+		        pc.setRemoteDescription(desc).then(function () {
+		            return pc.createAnswer();
+		        })
+		        .then(function (answer) {
+		            return pc.setLocalDescription(answer);
+		        })
+		        .then(function () {
+		            signalingChannel.send(JSON.stringify({ "sdp": pc.localDescription }));
+		        })
+		        .catch(logError);
+		    } else
+		        pc.setRemoteDescription(desc).catch(logError);
+		} else
+		    pc.addIceCandidate(new RTCIceCandidate(message.candidate)).catch(logError);
+	},
+		
+	/*
+	 * Web RTC Peer Connection
+	 */
+	addOnIceCallback: function(func) {
+		this.obj.peer.iceCallbacks.push(func);
+	},
+	
 	initRTCPeerConnection: function() {
 		trace(this.obj, 'Starting RTCPeerConnection');
 
 		var obj = this.obj;
 		obj.peer.peerConnection = new RTCPeerConnection(servers, pcConstraints);
 		obj.peer.peerConnection.onicecandidate = function(event) {
+			
 			obj.peer.peerConnectionIceCallback(event);
+			for (callBack in obj.peer.iceCallbacks) {
+				obj.peer.iceCallbacks[callBack](event);
+			}
 		};
 		obj.peer.peerConnection.onaddstream = function(event) { 
 			obj.peer.peerConnectionStreamCallback(event);
@@ -220,6 +282,8 @@ LP.LivePeer.prototype = {
 		//aa.connect(phoneOutput.destination);
 		var audio2 = document.querySelector('audio#audio2');
 		  audio2.srcObject = event.stream;
+		  
+		  
 	}
 	
 }
@@ -270,6 +334,7 @@ LP.T = LP.prototype = {
 })()
 
 //Exemplos
+//https://www.webrtc-experiment.com/docs/how-to-switch-streams.html
 //https://developer.mozilla.org/pt-BR/docs/Web/API/Navigator/getUserMedia
 //http://www.html5rocks.com/en/tutorials/webrtc/basics/?redirect_from_locale=pt
 //https://webrtc.github.io/samples/src/content/peerconnection/audio/
