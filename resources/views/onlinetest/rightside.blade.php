@@ -23,7 +23,7 @@
   			<span id="inputWarning2Status" class="sr-only">(warning)</span>
 
           </div>
-          <button type="submit" class="btn btn-primary"><i class="fa fa-play"></i> | Escutar rádio</button>
+          <a id="escutar" type="submit" class="btn btn-primary" role='button'><i class="fa fa-play"></i> Escutar rádio</a>
         </form>
         </div>
       </div><!-- /row --><br/>
@@ -59,3 +59,15 @@
       </div>
     </div><!-- /container -->
 	@endsection
+	
+@section('postjs')
+<script src="/js/livepeer/livepeer_0_0.js"></script>
+<script type="text/javascript">
+document.querySelector('a#escutar').onclick = function(e) {
+	e.preventDefault();
+
+	var player = {};
+	LivePeer(player, "player").createAnswer(radio);
+}
+</script>
+@endsection	

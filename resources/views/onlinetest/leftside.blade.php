@@ -31,7 +31,7 @@
 	            </dl>
 	            </div>
             </div>
-	        <a class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão &raquo;</a>
+	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão &raquo;</a>
         </div>
       </div><!-- /row --><br/>
 
@@ -65,6 +65,15 @@
 @section('postjs')
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script type="text/javascript">
-	
+document.querySelector('a#transmitir').onclick = function(e) {
+	e.preventDefault();
+
+	var radio = {};
+	LivePeer(radio, "radio");
+
+	setTimeout(function() {
+		LivePeer({}, "player").createAnswer(radio);
+	},2000);
+}
 </script>
 @endsection	

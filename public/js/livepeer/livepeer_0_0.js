@@ -7,6 +7,7 @@
 (function(){
 
 var LP = this.LP = function() {};
+var isTrace = true;
 var servers = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
 var constraints = {
     video: false,
@@ -18,6 +19,16 @@ var offerOptions = {
 	voiceActivityDetection: false
 };
 
+function trace(obj, msg) {
+	if (isTrace) {
+		if (obj.peer instanceof LP.LivePeer) {
+			console.log(obj.peer.type + ':' + msg);
+		} else {
+			console.log('undefined type:' + msg);
+		}
+	}
+}
+
 /*
  * LivePeer  
  */
@@ -27,38 +38,45 @@ LivePeer = this.LivePeer = function(obj, type) {
 
 // Class for Radio and Player
 // Distinct for parameter in constructor
-LP.LivePeer = {
-	obj: null,
-	type: "",
-	peerConnection: null,
-	peerDescription: null,
-	localMediaStream: null,
+LP.LivePeer = function(obj, type) {
+	this.obj 				= obj;
+	this.type				= type;
+	this.peerConnection		= null;
+	this.peerDescription	= null;
+	this.localMediaStream	= null;
+}
 
-	init: function(obj, type) {
-		if (typeof obj !== "object") return;
-		this.obj = obj;
-		
-		if (obj._lpStarted === undefined) {
-			obj._lpStarted = true;
-			obj.peer = this;
-
-			if (type !== undefined) {
-				this.type = type;
-			}
-			this.initRTCPeerConnection();
-
-			if (this.type == "radio") {
-				this.initRadio();
-			}
-			else if (this.type == "player") {
-				this.initPlayer();
-			}
-		}
-		return obj.peer;
-	},
+LP.LivePeer.init = function(obj, type) {
+	if (typeof obj !== "object") return;
 	
+	if (obj._lpStarted === undefined) {
+		obj._lpStarted = true;
+		obj.peer = new LP.LivePeer(obj, type);
+
+		trace(obj, 'Starting LivePeer');
+
+		if (type !== undefined) {
+			this.type = type;
+		} else {
+			throw new Error( "type not defined" );
+		}
+		obj.peer.initRTCPeerConnection();
+
+		if (this.type == "radio") {
+			obj.peer.initRadio();
+		}
+		else if (this.type == "player") {
+			obj.peer.initPlayer();
+		}
+
+		trace(obj, 'LivePeer started');
+	}
+	return obj.peer;
+}
+
+LP.LivePeer.prototype = {
 	initRTCPeerConnection: function() {
-		console.log(this.obj.peer.type +':Init RTCPeerConnection');
+		trace(this.obj, 'Starting RTCPeerConnection');
 
 		//crossbrowser
 		var RTCPeerConnection = window.RTCPeerConnection || 
@@ -71,41 +89,52 @@ LP.LivePeer = {
 		obj.peer.peerConnection.onicecandidate = function(event) {
 			obj.peer.peerConnectionIceCallback(event);
 		};
-		obj.peer.peerConnection.onaddstream = function() { 
-			obj.peer.peerConnectionStreamCallback();
+		obj.peer.peerConnection.onaddstream = function(event) { 
+			obj.peer.peerConnectionStreamCallback(event);
 		};
 	},
 
 	peerConnectionIceCallback: function(event) {
 		var obj = this.obj;
-		console.log(obj.peer.type +':Adding ICE candidate');
+		trace(obj, 'Adding ICE candidate');
 
 		if (event.candidate) {
-			console.log(obj.peer.type +':ICE candidate' + event.candidate.candidate);
+			trace(obj, 'ICE candidate' + event.candidate.candidate);
 
-			this.peerConnection.addIceCandidate(new RTCIceCandidate(event.candidate), function() {
-				console.log(obj.peer.type +':AddIceCandidate success');
+			this.peerConnection.addIceCandidate(new RTCIceCandidate(event.candidate),
+				function() {
+					trace(obj, 'ICE candidate added');
+				}, 
+				function () {
+					trace(obj, 'ICE candidate not added');
 			});
 		}
 	},
 	
-	peerConnectionStreamCallback: function() {
-		console.log(this.obj.peer.type +':On add stream');
-		
+	peerConnectionStreamCallback: function(event) {
+		trace(this.obj, 'Stream added'+ event);
+		this.obj.peer.sendSuccessCallback(event);
 	},
 	
 	createAnswer: function(remote) {
 		var obj = this.obj;
-		console.log(obj.peer.type +':Create Answer');
+		trace(obj, 'Creating answer');
 
 		obj.peer.peerConnection.setRemoteDescription(remote.peer.description(), function() {
-			obj.peer.peerConnection.createAnswer(function (desc) {
+			/*obj.peer.peerConnection.createAnswer(function (desc) {
 				obj.peer.peerDescription = desc;
 				obj.peer.peerConnection.setLocalDescription(desc, function() {
+					trace(obj, 'Answer created');
 					remote.peer.peerConnection.setRemoteDescription(desc);
-				}, function(err){});
-			}, function(err){});
-		}, function(err){});
+				}, function(err){
+					console.err(err);
+				});
+			}, function(err){
+				console.err(err);
+			});*/
+		}, function(err){
+			console.err(err);
+		});
 	},
 	
 	description: function() {
@@ -128,13 +157,15 @@ LP.LivePeer = {
 	},
 	
 	getUserMedia: function() {
+		var obj = this.obj;
+		trace(obj, 'Get user media');
+
 		//crossbrowser
 		navigator.getUserMedia = ( navigator.getUserMedia ||
 		        navigator.webkitGetUserMedia ||
 		        navigator.mozGetUserMedia ||
 		        navigator.msGetUserMedia);
 
-		var obj = this.obj;
 		navigator.getUserMedia(constraints, 
 			function(lmStream) {
 				obj.peer.microphoneInputCallbackSucesso(lmStream); 
@@ -154,7 +185,7 @@ LP.LivePeer = {
 
 	receiveSuccessCallback: function(localStream) {
 		var obj = this.obj;
-		console.log(obj.peer.type +':Adding Local Stream to peer connection');
+		trace(obj, 'Adding Local Stream to peer connection');
 
 		obj.peer.peerConnection.addStream(localStream);
 		obj.peer.peerConnection.createOffer(function(desc) {
@@ -169,12 +200,13 @@ LP.LivePeer = {
 	
 	phoneOutput: null,
 	initPlayer: function() {
-		/*var audioContext = new AudioContext();
-		microphoneInput = audioContext.createMediaStreamSource(localMediaStream);
-		microphoneInput.connect(audioContext.destination);*/		
+		//audio2.srcObject = e.stream;
+
+		phoneOutput = new AudioContext();
 	},
-	sendSuccessCallback: function(stream) {
-		
+	sendSuccessCallback: function(event) {
+		var aa = phoneOutput.createMediaStreamSource(event.stream);
+		aa.connect(phoneOutput.destination);				
 	}
 	
 }
@@ -227,13 +259,5 @@ LP.T = LP.prototype = {
 //Exemplos
 //https://developer.mozilla.org/pt-BR/docs/Web/API/Navigator/getUserMedia
 //http://www.html5rocks.com/en/tutorials/webrtc/basics/?redirect_from_locale=pt
-
-var radio = {};
-var player = {};
-
-LivePeer(radio, "radio");
-
-
-setTimeout(function() {
-	LivePeer(player, "player").createAnswer(radio);
-}, 2000);
+//https://github.com/webrtc/samples/blob/gh-pages/src/content/peerconnection/audio/js/main.js#L241
+//https://webrtc.github.io/samples/src/content/peerconnection/audio/
