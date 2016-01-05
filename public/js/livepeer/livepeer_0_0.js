@@ -16,8 +16,8 @@ var isTrace = true;
 var socketConstraint = {
 	'securite'	: 'ws',
 	'host'		: 'localhost',
-	'port'		: '9998',
-	'key'		: 'livepeertracker',
+	'port'		: '8080',
+	'key'		: 'ws',
 	uri: function() {
 		return this.securite + '://' + this.host + ':' + this.port + '/' + this.key;
 	}
@@ -110,9 +110,13 @@ LP.LivePeer.prototype = {
 
 		var obj = this.obj;
 
-	    websocket = new WebSocket(socketConstraint.uri());
+		this.websocket = new WebSocket(socketConstraint.uri());
+	    var websocket = this.websocket;
+
 	    websocket.onopen = function(evt) {
 	    	trace(obj, 'Web Sockect opened');
+	    	
+	    	websocket.send('teste');
 	    };
 	    websocket.onclose = function(evt) { 
 	    	trace(obj, 'Web Sockect closed');
