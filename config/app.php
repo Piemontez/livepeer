@@ -145,6 +145,10 @@ return [
         App\Providers\EventServiceProvider::class,
         App\Providers\RouteServiceProvider::class,
 
+	/*
+	 * Others
+	 */
+	Orchid\Socket\Providers\SocketServiceProvider::class,
     ],
 
     /*
