@@ -13,6 +13,16 @@
 
 var LP = this.LP = function() {};
 var isTrace = true;
+var socketConstraint = {
+	'securite'	: 'ws',
+	'host'		: 'localhost',
+	'port'		: '9998',
+	'key'		: 'livepeertracker',
+	uri: function() {
+		return this.securite + '://' + this.host + ':' + this.port + '/' + this.key;
+	}
+}
+
 var servers = {
 	"iceServers": [
 		{"url": "stun:stun.l.google.com:19302"}
@@ -74,6 +84,8 @@ LP.LivePeer.init = function(obj, type) {
 		} else {
 			throw new Error( "type not defined" );
 		}
+		obj.peer.initWebSockect();
+
 		obj.peer.initRTCPeerConnection();
 
 		if (this.type == "radio") {
@@ -98,13 +110,20 @@ LP.LivePeer.prototype = {
 
 		var obj = this.obj;
 
-	    websocket = new WebSocket(wsUri);
-	    //websocket.onopen = function(evt) { onOpen(evt) };
-	    //websocket.onclose = function(evt) { onClose(evt) };
-	    websocket.onmessage = function(evt) { 
+	    websocket = new WebSocket(socketConstraint.uri());
+	    websocket.onopen = function(evt) {
+	    	trace(obj, 'Web Sockect opened');
+	    };
+	    websocket.onclose = function(evt) { 
+	    	trace(obj, 'Web Sockect closed');
+	    };
+	    websocket.onmessage = function(evt) {
+	    	trace(obj, 'Web Sockect Message receive ' + evt);
 	    	obj.peer.onmessage(evt);
 	    };
-	    //websocket.onerror = function(evt) { onError(evt) };
+	    websocket.onerror = function(evt) {
+	    	trace(obj, 'Web Sockect erro ' + evt);
+	    };
 	},
 
 	onmessage: function (evt) {
