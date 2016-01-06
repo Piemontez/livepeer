@@ -31,7 +31,6 @@
 	            </dl>
 	            </div>
             </div>
-            <audio id="audio2" autoplay controls></audio>
 	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão &raquo;</a>
         </div>
       </div><!-- /row --><br/>
@@ -89,18 +88,15 @@
 function startPeer()
 {
 	var radio = {};
-	var player = {};
+	LivePeer(radio, "radio").addOnIceCallback(iceCallback);
 
-	LivePeer(radio, "radio");
-	LivePeer(player, "player");
-	LivePeer(radio).addOnIceCallback(iceCallback);
-
+	/*var player = {};
 	LivePeer(radio).setRemote(player);
 	LivePeer(player).setRemote(radio);
 
 	setTimeout(function() {
 		LivePeer(player).createAnswer(radio);
-	},2000);
+	},2000);*/
 }
 
 document.querySelector('a#transmitir').onclick = function(e) {

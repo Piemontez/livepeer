@@ -43,14 +43,139 @@ var mediaConstraints = {
 
 function trace(obj, msg) {
 	if (isTrace) {
+		if (msg === undefined) {
+			console.log(obj);
+		}
 		if (obj.peer instanceof LP.LivePeer) {
-			console.log(obj.peer.type + ':' + msg);
+			//console.log(obj.peer.type + ':' + msg);
 		} else {
-			console.log('undefined type:' + msg);
+			//console.log('undefined type:' + msg);
 		}
 	}
 }
+/*
+ * Observer
+ */
 
+function Observer() {
+    this.handlers = [];
+};
+Observer.prototype = {
+    subscribe: function(fn) {
+        this.handlers.push(fn);
+    },
+    unsubscribe: function(fn) {
+        this.handlers = this.handlers.filter(
+            function(item) {
+                if (item !== fn) {
+                    return item;
+                }
+            }
+        );
+    },
+    fire: function(o, thisObj) {
+        var scope = thisObj || window;
+        this.handlers.forEach(function(item) {
+            item.call(scope, o);
+        });
+    }
+};
+
+/*
+ * Peer
+ */
+
+LP.Peer = function() {
+	this.obs = [];
+	this.candidates	= [];
+	this.connection	= null;
+	this.description= null;
+}
+LP.Peer.init = function() {
+	trace('Starting Peer');
+
+	var peer = new LP.Peer();
+	peer.obs['icecandidate'] = new Observer();
+	peer.obs['addstream'] = new Observer();
+	
+	peer.on('icecandidate', peer.onicecandidate)
+	
+	peer.connection = new RTCPeerConnection(servers, pcConstraints);
+	peer.connection.onicecandidate = function(event) {
+		trace('Peer:onicecandidate');
+		peer.obs['icecandidate'].fire(event);
+	};
+	peer.connection.onaddstream = function(event) {
+		trace('Peer:onaddstream');
+		peer.obs['addstream'].fire(event);
+	};
+	
+	return peer;
+};
+
+LP.Peer.prototype = {
+	onicecandidate: function(event) 
+	{
+		this.candidates.push(event);
+	},
+
+	on: function(ev, func) {
+		this.obs[ev].subscribe(func);
+	}
+}
+
+/*
+ * Socket
+ */
+
+LP.Socket = function() {
+	this.obs = [];
+	this.websocket = null;
+}
+
+LP.Socket.init = function() {
+	trace('Starting Socket');
+
+	var socket = new LP.Socket();
+	socket.obs['open'] = new Observer();
+	socket.obs['close'] = new Observer();
+	socket.obs['message'] = new Observer();
+	socket.obs['error'] = new Observer();
+    
+	var websocket = socket.websocket = new WebSocket(socketConstraint.uri());
+
+    websocket.onopen = function(evt) {
+    	trace('Socket Open');
+    	socket.obs['open'].fire();
+    };
+
+    websocket.onclose = function(evt) { 
+    	trace('Socket Close');
+    	socket.obs['close'].fire();
+    };
+
+    websocket.onmessage = function(evt) {
+    	trace('Socket Message Receive ' + evt.data);
+    	socket.obs['message'].fire(evt.data);
+    };
+    
+    websocket.onerror = function(evt) {
+    	trace('Socket Message Error ' + evt.data);
+    	socket.obs['error'].fire(evt.data);
+    };
+
+	return socket;
+}
+
+LP.Socket.prototype = {
+	addEventListener: document.addEventListener || document.attachEvent,
+	dispatchEvent: document.dispatchEvent,
+	fireEvent: document.fireEvent,
+
+	on: function(ev, func) {
+		this.obs[ev].subscribe(func);
+	}
+}
 /*
  * LivePeer  
  */
@@ -79,14 +204,28 @@ LP.LivePeer.init = function(obj, type) {
 
 		trace(obj, 'Starting LivePeer');
 
+		/************************************/
+		var socket = LP.Socket.init();
+		var newPeer = LP.Peer.init();
+
+		socket.on('open', function() {
+			
+		});
+		
+		socket.on('message', function() {
+			
+		});
+		
+
+		/************************************/
 		if (type !== undefined) {
 			this.type = type;
 		} else {
 			throw new Error( "type not defined" );
 		}
-		obj.peer.initWebSockect();
-
 		obj.peer.initRTCPeerConnection();
+
+		obj.peer.initWebSockect();
 
 		if (this.type == "radio") {
 			obj.peer.initRadio();
@@ -115,45 +254,82 @@ LP.LivePeer.prototype = {
 
 	    websocket.onopen = function(evt) {
 	    	trace(obj, 'Web Sockect opened');
-	    	
-	    	websocket.send('teste');
+	    	if (obj.peer.type == 'player') {
+				websocket.send(JSON.stringify({
+					targetUser: obj.peer.type,
+					func: 'need_offer'
+				}));
+	    	}
 	    };
 	    websocket.onclose = function(evt) { 
 	    	trace(obj, 'Web Sockect closed');
 	    };
 	    websocket.onmessage = function(evt) {
-	    	trace(obj, 'Web Sockect Message receive ' + evt);
-	    	obj.peer.onmessage(evt);
+	    	trace(obj, 'Web Sockect Message receive ' + evt.data);
+	    	obj.peer.onmessage(obj, evt);
 	    };
 	    websocket.onerror = function(evt) {
 	    	trace(obj, 'Web Sockect erro ' + evt);
 	    };
 	},
 
-	onmessage: function (evt) {
-		if (!pc)
-		    start();
-		
+	onmessage: function (obj, evt) {
 		var message = JSON.parse(evt.data);
-		if (message.sdp) {
-		    var desc = new RTCSessionDescription(message.sdp);
-		
-		    // if we get an offer, we need to reply with an answer
-		    if (desc.type == "offer") {
-		        pc.setRemoteDescription(desc).then(function () {
-		            return pc.createAnswer();
-		        })
-		        .then(function (answer) {
-		            return pc.setLocalDescription(answer);
-		        })
-		        .then(function () {
-		            signalingChannel.send(JSON.stringify({ "sdp": pc.localDescription }));
-		        })
-		        .catch(logError);
-		    } else
-		        pc.setRemoteDescription(desc).catch(logError);
-		} else
-		    pc.addIceCandidate(new RTCIceCandidate(message.candidate)).catch(logError);
+
+		switch(message.func) {
+			case 'need_offer':
+				if (obj.peer.type == 'radio')
+				{
+					obj.peer.websocket.send(JSON.stringify({
+						targetUser: obj.peer.type,
+						func: 'offer',
+						sdp: obj.peer.description()
+					}));
+				}
+				break;
+			case 'offer':
+				if (obj.peer.type == 'player')
+				{
+					var desc = new RTCSessionDescription(message.sdp);
+					obj.peer.peerConnection.setRemoteDescription(desc, function() {
+						obj.peer.peerConnection.createAnswer(function (desc) {
+							obj.peer.peerDescription = desc;
+							obj.peer.peerConnection.setLocalDescription(desc, function() {
+								trace(obj, 'Answer created\n' + desc.sdp);
+								obj.peer.websocket.send(JSON.stringify({
+									targetUser: obj.peer.type,
+									func: 'answer',
+									sdp: obj.peer.description()
+								}));
+							}, function(err){
+								console.err(err);
+							});
+						}, function(err){
+							console.err(err);
+						});
+					}, function(err){
+							console.err(err);
+					});
+				}
+			case 'answer':
+				if (obj.peer.type == 'radio')
+				{
+					var desc = new RTCSessionDescription(message.sdp);
+					obj.peer.peerConnection.setRemoteDescription(desc);
+
+				}
+				break;
+			case 'icecandidate':
+				obj.peer.peerConnection.addIceCandidate(new RTCIceCandidate(message.ice),
+					function() {
+						trace(obj, 'ICE candidate added');
+					}, 
+					function () {
+						trace(obj, 'ICE candidate not added');
+				});
+				break;
+		};
+		return;
 	},
 		
 	/*
@@ -170,7 +346,7 @@ LP.LivePeer.prototype = {
 		obj.peer.peerConnection = new RTCPeerConnection(servers, pcConstraints);
 		obj.peer.peerConnection.onicecandidate = function(event) {
 			
-			obj.peer.peerConnectionIceCallback(event);
+			obj.peer.peerConnectionIceCallback(obj, event);
 			for (callBack in obj.peer.iceCallbacks) {
 				obj.peer.iceCallbacks[callBack](event);
 			}
@@ -180,21 +356,17 @@ LP.LivePeer.prototype = {
 		};
 	},
 
-	peerConnectionIceCallback: function(event) {
-		var obj = this.obj;
+	peerConnectionIceCallback: function(obj, event) {
 		trace(obj, 'Adding ICE candidate');
 
 		if (event.candidate) {
 			trace(obj, 'ICE candidate' + event.candidate.candidate);
-
-			//TODO
-			obj.remote.peer.peerConnection.addIceCandidate(new RTCIceCandidate(event.candidate),
-				function() {
-					trace(obj, 'ICE candidate added');
-				}, 
-				function () {
-					trace(obj, 'ICE candidate not added');
-			});
+			
+			obj.peer.websocket.send(JSON.stringify({
+				targetUser: obj.peer.type,
+				func: 'icecandidate',
+				ice: event.candidate
+			}));
 		}
 	},
 	
@@ -273,15 +445,16 @@ LP.LivePeer.prototype = {
 
 	receiveSuccessCallback: function(localStream) {
 		var obj = this.obj;
-		
+
 		trace(obj, 'Adding Local Stream to peer connection');
 		obj.peer.peerConnection.addStream(localStream);
 
 		obj.peer.peerConnection.createOffer(function(desc) {
-
 				trace(obj, 'Create Offer for peer connection\n' + desc.sdp);
+
 				obj.peer.peerDescription = desc;
 				obj.peer.peerConnection.setLocalDescription(desc);
+
 			}, 
 			function (err) {
 				console.err(err);
