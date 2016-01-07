@@ -87,6 +87,7 @@ Observer.prototype = {
 
 LP.Peer = function() {
 	this.obs = [];
+	this.token = null;
 	this.candidates	= [];
 	this.connection	= null;
 	this.description= null;
@@ -121,6 +122,29 @@ LP.Peer.prototype = {
 
 	on: function(ev, func) {
 		this.obs[ev].subscribe(func);
+	},
+
+	setRemoteDescription: function(sdp) {
+		var desc = new RTCSessionDescription(message.sdp);
+		this.connection.setRemoteDescription(desc);
+	},
+
+	addRemoteIceCandidate: function(candidate) {
+		this.connection.addIceCandidate(new RTCIceCandidate(candidate),
+			function() {
+				trace('ICE candidate added');
+			}, 
+			function () {
+				trace('ICE candidate not added');
+		});
+	},
+
+	token: function() {
+		return this.token;
+	},
+
+	generateToken: function() {
+		return this.token = Math.random();
 	}
 }
 
@@ -177,6 +201,248 @@ LP.Socket.prototype = {
 	}
 }
 /*
+ *  Broadcast
+ */
+
+LP.Broadcast = function() {
+	this.socket			= null;
+	this.localMediaStream	= null;
+	this.nodes = [];
+}
+
+LP.Broadcast.init = function() {
+	var broadcast = new LP.Broadcast();
+	var socket = broadcast.socket = LP.Socket.init();
+
+	socket.on('open', function() {
+
+	});
+
+	socket.on('message', function(message) {
+		message = JSON.parse(message);
+		switch(message.func) {
+			case 'need_offer':
+				var peer = broadcast.createPeer();
+				socket.send(JSON.stringify({
+					func: 'offer',
+					token: peer.token(),
+					sdp: peer.description()
+				}));
+				break;
+			case 'answer':
+				var peer = this.nodes[message.token];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					peer.setRemoteDescription(message.sdp);
+				} 
+				break;
+			case 'icecandidate':
+				var peer = this.nodes[message.token];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					peer.addRemoteIceCandidate(message.ice);
+				}
+				break;
+		};
+		return;
+	});
+
+	return broadcast;
+}
+
+LP.Broadcast.prototype = {
+
+	createPeer: function() {
+		var newPeer = LP.Peer.init();
+		return this.nodes[ newPeer.generateToken() ] = newPeer;
+	},
+	/*
+	 * Web Sockect 
+	 */
+	initWebSockect: function() {
+		trace(this.obj, 'Starting Web Sockect');
+
+		var obj = this.obj;
+
+		this.websocket = new WebSocket(socketConstraint.uri());
+	    var websocket = this.websocket;
+
+	    websocket.onopen = function(evt) {
+	    	trace(obj, 'Web Sockect opened');
+	    	if (obj.peer.type == 'player') {
+				websocket.send(JSON.stringify({
+					targetUser: obj.peer.type,
+					func: 'need_offer'
+				}));
+	    	}
+	    };
+	    websocket.onclose = function(evt) { 
+	    	trace(obj, 'Web Sockect closed');
+	    };
+	    websocket.onmessage = function(evt) {
+	    	trace(obj, 'Web Sockect Message receive ' + evt.data);
+	    	obj.peer.onmessage(obj, evt);
+	    };
+	    websocket.onerror = function(evt) {
+	    	trace(obj, 'Web Sockect erro ' + evt);
+	    };
+	},
+
+	onmessage: function (obj, evt) {
+	},
+		
+	/*
+	 * Web RTC Peer Connection
+	 */
+	addOnIceCallback: function(func) {
+		this.obj.peer.iceCallbacks.push(func);
+	},
+	
+	initRTCPeerConnection: function() {
+		trace(this.obj, 'Starting RTCPeerConnection');
+
+		var obj = this.obj;
+		obj.peer.peerConnection = new RTCPeerConnection(servers, pcConstraints);
+		obj.peer.peerConnection.onicecandidate = function(event) {
+			
+			obj.peer.peerConnectionIceCallback(obj, event);
+			for (callBack in obj.peer.iceCallbacks) {
+				obj.peer.iceCallbacks[callBack](event);
+			}
+		};
+		obj.peer.peerConnection.onaddstream = function(event) { 
+			obj.peer.peerConnectionStreamCallback(event);
+		};
+	},
+
+	peerConnectionIceCallback: function(obj, event) {
+		trace(obj, 'Adding ICE candidate');
+
+		if (event.candidate) {
+			trace(obj, 'ICE candidate' + event.candidate.candidate);
+			
+			obj.peer.websocket.send(JSON.stringify({
+				targetUser: obj.peer.type,
+				func: 'icecandidate',
+				ice: event.candidate
+			}));
+		}
+	},
+	
+	peerConnectionStreamCallback: function(event) {
+		trace(this.obj, 'Stream added'+ event);
+		this.obj.peer.sendSuccessCallback(event);
+	},
+	
+	setRemote: function(remote) {
+		this.obj.remote = remote;
+		this;
+	},
+	
+	createAnswer: function(remote) {
+		var obj = this.obj;
+		trace(obj, 'Creating answer');
+
+		obj.peer.peerConnection.setRemoteDescription(remote.peer.description(), function() {
+			obj.peer.peerConnection.createAnswer(function (desc) {
+				
+				obj.peer.peerDescription = desc;
+				obj.peer.peerConnection.setLocalDescription(desc, function() {
+					trace(obj, 'Answer created\n' + desc.sdp);
+
+					remote.peer.peerConnection.setRemoteDescription(desc, function() {});
+				}, function(err){
+					console.err(err);
+				});
+			}, function(err){
+				console.err(err);
+			});
+		}, function(err){
+			console.err(err);
+		});
+	},
+	
+	description: function() {
+		return this.obj.peer.peerDescription;
+	},
+
+	setOpusCodec: function() {
+		
+	},
+
+	/*
+	 * For Radio
+	 */	
+	microphoneInput: null,
+	nodesForSend: null,
+
+	initRadio: function() {
+		var obj = this.obj; 
+		obj.peer.getUserMedia();
+	},
+	
+	getUserMedia: function() {
+		var obj = this.obj;
+		trace(obj, 'Get user media');
+
+		navigator.mediaDevices.getUserMedia(mediaConstraints)
+		.then( 
+		function(lmStream) {
+			obj.peer.microphoneInputCallbackSucesso(lmStream); 
+		})
+		.catch(this.microphoneInputCallbackErro);
+	},
+
+	microphoneInputCallbackSucesso: function(lmStream) {
+		localMediaStream = lmStream;
+		this.receiveSuccessCallback(lmStream);
+	},
+
+	microphoneInputCallbackErro: function(err) {
+		console.err(err);
+	},
+
+	receiveSuccessCallback: function(localStream) {
+		var obj = this.obj;
+
+		trace(obj, 'Adding Local Stream to peer connection');
+		obj.peer.peerConnection.addStream(localStream);
+
+		obj.peer.peerConnection.createOffer(function(desc) {
+				trace(obj, 'Create Offer for peer connection\n' + desc.sdp);
+
+				obj.peer.peerDescription = desc;
+				obj.peer.peerConnection.setLocalDescription(desc);
+
+			}, 
+			function (err) {
+				console.err(err);
+			}, 
+			offerOptions
+		);
+	},
+	
+	/*
+	 * For Player
+	 */
+	
+	phoneOutput: null,
+	initPlayer: function() {
+		//audio2.srcObject = e.stream;
+
+		//phoneOutput = new AudioContext();
+	},
+	sendSuccessCallback: function(event) {
+		//var aa = phoneOutput.createMediaStreamSource(event.stream);
+		//aa.connect(phoneOutput.destination);
+		var audio2 = document.querySelector('audio#audio2');
+		  audio2.srcObject = event.stream;
+		  
+		  
+	}
+	
+}
+
+
+/*
  * LivePeer  
  */
 LivePeer = this.LivePeer = function(obj, type) {
@@ -205,18 +471,8 @@ LP.LivePeer.init = function(obj, type) {
 		trace(obj, 'Starting LivePeer');
 
 		/************************************/
-		var socket = LP.Socket.init();
-		var newPeer = LP.Peer.init();
-
-		socket.on('open', function() {
-			
-		});
+		var socket = LP.Broadcast.init();
 		
-		socket.on('message', function() {
-			
-		});
-		
-
 		/************************************/
 		if (type !== undefined) {
 			this.type = type;
