@@ -87,8 +87,9 @@
 <script type="text/javascript">
 function startPeer()
 {
-	var radio = {};
-	LivePeer(radio, "radio").addOnIceCallback(iceCallback);
+	LP.Broadcast.init();
+	//var radio = {};
+	//LivePeer(radio, "radio").addOnIceCallback(iceCallback);
 
 	/*var player = {};
 	LivePeer(radio).setRemote(player);

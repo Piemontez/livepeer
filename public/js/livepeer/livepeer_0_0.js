@@ -42,7 +42,7 @@ var mediaConstraints = {
 };
 
 function error(err) {
-	console.err(err);
+	console.error(err);
 }
 function trace(obj, msg) {
 	if (isTrace) {
@@ -90,21 +90,22 @@ Observer.prototype = {
 
 LP.Peer = function() {
 	this.obs = [];
-	this.token = null;
-	this.candidates	= [];
+	this._token = null;
+	this._description= null;
+	this._candidates	= [];
 	this.connection	= null;
-	this.description= null;
 }
 LP.Peer.init = function(token) {
 	trace('Starting Peer');
 
 	var peer = new LP.Peer();
 	if (token !== undefined) { 
-		peer.token = token;
+		peer._token = token;
 	}
 
 	peer.obs['icecandidate'] = new Observer();
 	peer.obs['addstream'] = new Observer();
+	peer.obs['setremotedescription'] = new Observer();
 	
 	peer.on('icecandidate', peer.onicecandidate)
 	
@@ -122,36 +123,45 @@ LP.Peer.init = function(token) {
 };
 
 LP.Peer.prototype = {
-	onicecandidate: function(event) 
-	{
-		this.candidates.push(event);
-	},
 
 	on: function(ev, func) {
 		this.obs[ev].subscribe(func);
 	},
 	
-	setInputStream: function(lmStream) {
-		this.connection.receiveSuccessCallback(lmStream);
+
+	onicecandidate: function(event) 
+	{
+		this._candidates.push(event);
 	},
+	
+	/*setInputStream: function(lmStream) {
+		this.connection.receiveSuccessCallback(lmStream);
+	},*/
 
 	description: function() {
-		return this.description;
+		return this._description;
+	},
+
+	addStream: function(localStream) {
+		this.connection.addStream(localStream);
 	},
 
 	setLocalDescription: function(desc)
 	{
-		this.description = desc;
+		this._description = desc;
+		var peer = this;
 		this.connection.setLocalDescription(desc);
 	},
 	
 	setRemoteDescription: function(sdp) {
 		var desc = new RTCSessionDescription(sdp);
-		this.connection.setRemoteDescription(desc);
+		this.connection.setRemoteDescription(desc, function() {
+			peer.obs['setremotedescription'].fire();
+		}, error);
 	},
 
 	candidates: function() {
-		return this.candidates;
+		return this._candidates;
 	},
 
 	addRemoteIceCandidate: function(candidate) {
@@ -165,11 +175,11 @@ LP.Peer.prototype = {
 	},
 
 	token: function() {
-		return this.token;
+		return this._token;
 	},
 
 	generateToken: function() {
-		return this.token = Math.random();
+		return this._token = Math.random();
 	}
 }
 
@@ -223,7 +233,16 @@ LP.Socket.prototype = {
 
 	on: function(ev, func) {
 		this.obs[ev].subscribe(func);
-	}
+	},
+
+	send: function(func, token, obj) {
+		if (obj === undefined) {
+			obj = {};
+		}
+		obj.func = func;
+		obj.token = token;
+		this.websocket.send(JSON.stringify(obj));		
+	},
 }
 /*
  *  Broadcast
@@ -248,11 +267,13 @@ LP.Broadcast.init = function() {
 		switch(message.func) {
 		case 'need_offer':
 			var peer = broadcast.createPeer();
-			socket.send(JSON.stringify({
-				func: 'offer',
-				token: peer.token(),
-				sdp: peer.description()
-			}));
+
+			peer.addStream(broadcast.localStream);
+
+			peer.on('createoffer', function(desc) {
+				peer.setLocalDescription(desc);
+				socket.send('offer', peer.token(), {sdp: peer.description()});
+			});
 			break;
 		case 'answer':
 			var peer = this.nodes[message.token];
@@ -309,24 +330,6 @@ LP.Broadcast.prototype = {
 	setOpusCodec: function() {
 		
 	},
-
-	/*Todo postergar para depois da solicitação do lado direito
-	receiveSuccessCallback: function(localStream) {
-		var obj = this.obj;
-
-		trace(obj, 'Adding Local Stream to peer connection');
-		obj.peer.peerConnection.addStream(localStream);
-
-		obj.peer.peerConnection.createOffer(function(desc) {
-				trace(obj, 'Create Offer for peer connection\n' + desc.sdp);
-
-				obj.peer.peerDescription = desc;
-				obj.peer.peerConnection.setLocalDescription(desc);
-
-			}, 
-			error, offerOptions
-		);
-	},*/
 }
 
 
@@ -346,33 +349,37 @@ LP.Player.init = function(obj, type) {
  
 	var socket	= player.socket	= LP.Socket.init();
 	socket.on('open', function() {
-		socket.send(JSON.stringify({
-			func: 'need_offer'
-		}));
+		socket.send('need_offer');
 	});
 	socket.on('message', function(message) {
+
 		message = JSON.parse(message);
 		switch(message.func) {
 		case 'offer':
+			
 			player.node	= LP.Peer.init(message.token);
 			//TODO: remover vinculo com websocket
-			player.node.websocket.onaddstream = function(event) {
+			player.node.connection.onaddstream = function(event) {
+				console.log('on:addstream');
 				player.onAddStreamCallback(event);
 			};
+			player.node.on('setremotedescription', function() {
+				console.log('on:setremotedescription');
+				//TODO: remover vinculo com websocket
+				player.node.connection.createAnswer(function (desc) {
+					player.node.setLocalDescription(desc);
+					socket.send.send(JSON.stringify({
+						token: player.node.token(),
+						func: 'answer',
+						sdp: player.node.description()
+					}));
+					socket.send.send(JSON.stringify({
+						token: player.node.token(),
+						func: 'need_icecandidates'
+					}));
+				}, error);
+			});
 			player.node.setRemoteDescription(message.sdp);
-			//TODO: remover vinculo com websocket
-			player.node.websocket.createAnswer(function (desc) {
-				player.node.setLocalDescription(desc);
-				socket.send.send(JSON.stringify({
-					token: player.node.token(),
-					func: 'answer',
-					sdp: player.node.description()
-				}));
-				socket.send.send(JSON.stringify({
-					token: player.node.token(),
-					func: 'need_icecandidates'
-				}));
-			}, error);
 			break;
 		case 'icecandidates':
 			if (player.node.token() == message.token)
@@ -482,7 +489,7 @@ LP.LivePeer.init = function(obj, type) {
 		trace(obj, 'Starting LivePeer');
 
 		/************************************/
-		var socket = LP.Broadcast.init();
+		//var socket = LP.Broadcast.init();
 		
 		/************************************/
 		if (type !== undefined) {

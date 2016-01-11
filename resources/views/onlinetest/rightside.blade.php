@@ -68,8 +68,9 @@
 document.querySelector('a#escutar').onclick = function(e) {
 	e.preventDefault();
 
-	var player = {};
-	LivePeer(player, "player");	
+	LP.Player.init();
+	//var player = {};
+	//LivePeer(player, "player");	
 }
 </script>
 @endsection	
