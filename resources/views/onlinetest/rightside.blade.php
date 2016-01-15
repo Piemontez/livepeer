@@ -10,22 +10,33 @@
       </div>
       <p>Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.</p>
 
-      <div class="row ">
+      <div class="row">
         <div class="col-md-8 col-md-offset-2">
-        <form class="form-inline">
-          <div class="form-group has-feedback">
-            <div class="input-group">
-              <span class="input-group-addon">Endereço servidor</span>
-              <input type="text" class="form-control" id="serverid" placeholder="192.168.0.0:8080">
+            <h3>Radio</h3>
+            <div class="row">
+            	<div class="col-md-6">
+	            <dl class="dl-horizontal">
+	              <dt data-toggle="tooltip">Token</dt>
+	              <dd id="token">....</dd>
+	              <dt data-toggle="tooltip">Bytes Received</dt>
+	              <dd id="biterate_rec">....</dd>
+	              <dt data-toggle="tooltip">Packets Received</dt>
+	              <dd id="packets_rec">....</dd>
+              	</dl>
+	            </div>
+            	<div class="col-md-6">
+	            <dl class="dl-horizontal">
+	              <dt data-toggle="tooltip">&nbsp;</dt>
+	              <dd id="token">&nbsp;</dd>
+	              <dt data-toggle="tooltip">Bytes last sec.</dt>
+	              <dd id="biterate_rec_sec">....</dd>
+	              <dt data-toggle="tooltip">Packets  last sec.</dt>
+	              <dd id="packets_rec_sec">....</dd>
+	            </dl>
+	            </div>
             </div>
-
-  			<span class="glyphicon glyphicon-warning-sign form-control-feedback" aria-hidden="true"></span>
-  			<span id="inputWarning2Status" class="sr-only">(warning)</span>
-
-          </div>
-          <audio id="audio2" hidden="hidden" autoplay controls></audio>
-          <a id="escutar" type="submit" class="btn btn-primary" role='button'><i class="fa fa-play"></i> Escutar rádio</a>
-        </form>
+	        <audio id="audio2" hidden="hidden" autoplay controls></audio>
+            <a id="escutar" type="submit" class="pull-right btn btn-primary" role='button'><i class="fa fa-play"></i> Escutar rádio</a>
         </div>
       </div><!-- /row --><br/>
 
@@ -33,13 +44,12 @@
         <div class="col-md-4 col-md-offset-2">
         <div class="panel panel-default">
           <div class="panel-heading">
-            <h3 class="panel-title">Download</h3>
+            <h3 class="panel-title">Download / Bytes Received</h3>
           </div>
           <div class="panel-body">
-            <dl class="dl-horizontal">
-              <dt data-toggle="tooltip" title="direta">Conectado com</dt>
-              <dd>...</dd>
-            </dl>
+		    <div class="graph-container" id="bitrateGraphRec" style="width: 100%">
+		      <canvas id="bitrateCanvasRec"></canvas>
+		    </div>
           </div>
         </div>
         </div>
@@ -50,27 +60,31 @@
             <h3 class="panel-title">Upload</h3>
           </div>
           <div class="panel-body">
-            <dl class="dl-horizontal">
-              <dt data-toggle="tooltip" title="direta">Usuários conectados</dt>
-              <dd>...</dd>
-            </dl>
           </div>
         </div>
         </div>
-      </div>
+      </div><!-- /row -->
+
     </div><!-- /container -->
 	@endsection
 	
 @section('postjs')
+<script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
 <script src="https://webrtc.github.io/samples/src/js/adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
+<script src="/js/livepeer/teste.js"></script>
+
 <script type="text/javascript">
 document.querySelector('a#escutar').onclick = function(e) {
 	e.preventDefault();
 
-	LP.Player.init();
-	//var player = {};
-	//LivePeer(player, "player");	
+	var player = LP.Player.init();
+
+	player.on('newpeer', function(newpeer) {
+		document.querySelector('dd#token').innerHTML = newpeer.token();
+
+		receivedDisplay(newpeer);
+	});
 }
 </script>
 @endsection	
