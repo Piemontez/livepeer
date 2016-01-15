@@ -18,9 +18,9 @@
 	            <dl class="dl-horizontal">
 	              <dt data-toggle="tooltip">...</dt>
 	              <dd id="token">....</dd>
-	              <dt data-toggle="tooltip">Bytes Received</dt>
+	              <dt data-toggle="tooltip">Bytes Send</dt>
 	              <dd id="biterate_sen">....</dd>
-	              <dt data-toggle="tooltip">Packets Received</dt>
+	              <dt data-toggle="tooltip">Packets Send</dt>
 	              <dd id="packets_sen">....</dd>
               	</dl>
 	            </div>
@@ -35,7 +35,7 @@
 	            </dl>
 	            </div>
             </div>
-	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão &raquo;</a>
+	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão via broadcast &raquo;</a>
         </div>
       </div><!-- /row --><br/>
 
@@ -46,7 +46,7 @@
             <h3 class="panel-title">Bytes Sent</h3>
           </div>
           <div class="panel-body">
-		    <div class="graph-container" id="bitrateGraphSen" style="width: 100%">
+		    <div id="bitrateGraphSen" style="width: 100%">
 		      <canvas id="bitrateCanvasSen"></canvas>
 		    </div>
           </div>
@@ -59,7 +59,7 @@
             <h3 class="panel-title">Packets Sent</h3>
           </div>
           <div class="panel-body">
-		    <div class="graph-container" id="packetsGraphSen" style="width: 100%">
+		    <div id="packetsGraphSen" style="width: 100%">
 		      <canvas id="packetsCanvasSen"></canvas>
 		    </div>
           </div>
