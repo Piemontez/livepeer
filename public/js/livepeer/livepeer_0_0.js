@@ -287,7 +287,8 @@ LP.Broadcast.init = function() {
 		case 'need_offer':
 			var peer = broadcast.createPeer();
 
-			peer.addStream(broadcast.localMediaStream);
+			//peer.addStream(broadcast.localMediaStream);
+			peer.addStream(broadcast.teste.stream);
 
 			peer.on('createoffer', function(desc) {
 				peer.setLocalDescription(desc);
@@ -332,6 +333,8 @@ LP.Broadcast.prototype = {
 		return newPeer;
 	},
 
+	teste: null,
+	
 	getUserMedia: function() {
 		trace('Get UserMedia');
 
@@ -339,7 +342,32 @@ LP.Broadcast.prototype = {
 		navigator.mediaDevices.getUserMedia(mediaConstraints)
 		.then(function(lmStream) {
 			trace('UserMedia received' + lmStream);
-			broadcast.setLocalMediaStream(lmStream); 
+			broadcast.setLocalMediaStream(lmStream);
+
+			var audioCtx = new AudioContext();
+
+            var source = audioCtx.createMediaStreamSource(lmStream);
+			//var scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
+			var scriptNode = audioCtx.createBiquadFilter();
+			//var scriptNode = audioCtx.createDelayNode();
+	        var peer = audioCtx.createMediaStreamDestination();
+
+			scriptNode.onaudioprocess = function(audioProcessingEvent) {
+				//console.log(audioProcessingEvent);
+			};
+
+			source.connect(scriptNode);
+			scriptNode.connect(peer);
+
+			broadcast.teste = peer;
+			
+			//scriptNode.connect(audioCtx.destination);
+
+			  //scriptNode.connect(audioCtx.destination);
+
+			//var audio2 = document.querySelector('audio#audio2');
+			  //audio2.srcObject = scriptNode.stream;
+
 		}).catch(error);
 	},
 	
@@ -493,9 +521,15 @@ LP.T = LP.prototype = {
 })()
 
 // Exemplos
+//https://dvcs.w3.org/hg/audio/raw-file/tip/webaudio/webrtc-integration.html
+
 // https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API
 // https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode
 // https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode/loop
+
+//https://subvisual.co/blog/posts/39-tutorial-html-audio-capture-streaming-to-node-js-no-browser-extensions
+//http://www.webrtc-experiment.com/RecordRTC.js
+//https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
 
 // https://www.webrtc-experiment.com/docs/how-to-switch-streams.html
 // https://developer.mozilla.org/pt-BR/docs/Web/API/Navigator/getUserMedia
