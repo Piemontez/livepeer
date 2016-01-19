@@ -12,7 +12,7 @@
 
       <div class="row">
         <div class="col-md-8 col-md-offset-2">
-            <h3>Radio</h3>
+            <h3>Player</h3>
             <div class="row">
             	<div class="col-md-6">
 	            <dl class="dl-horizontal">
@@ -36,7 +36,14 @@
 	            </div>
             </div>
 	        <audio id="audio2" hidden="hidden" autoplay controls></audio>
-            <a id="escutar" type="submit" class="pull-right btn btn-primary" role='button'><i class="fa fa-play"></i> Escutar rádio</a>
+	        <div class="pull-right form-inline">
+	          <div class="checkbox">
+			    <label>
+			      <input type="checkbox" id="with_peer"> With P2P
+			    </label>
+			  </div>
+	          <a id="initPlayer" class="btn btn-primary" role='button'><i class="fa fa-play"></i> Start</a>
+            </div>
         </div>
       </div><!-- /row --><br/>
 
@@ -75,16 +82,29 @@
 <script src="/js/livepeer/teste.js"></script>
 
 <script type="text/javascript">
-document.querySelector('a#escutar').onclick = function(e) {
-	e.preventDefault();
+window.onload = function() {
 
-	var player = LP.Player.init();
+	var player = null;
+	document.querySelector('a#initPlayer').onclick = function(e) {
+		e.preventDefault();
 
-	player.on('newpeer', function(newpeer) {
-		document.querySelector('dd#token').innerHTML = newpeer.token();
+		if (player === null || !player.isRunning()) 
+		{
+			player = LP.Player.init();
+			player.on('newpeer', function(newpeer) {
+				document.querySelector('dd#token').innerHTML = newpeer.token();
+		
+				receivedDisplay(newpeer);
+			});
 
-		receivedDisplay(newpeer);
-	});
+			document.querySelector('a#initPlayer').setAttribute("class", "btn btn-warning");
+			document.querySelector('a#initPlayer').innerHTML = "Stop";
+		} else {
+			player.stop();
+			document.querySelector('a#initPlayer').setAttribute("class", "btn btn-primary");
+			document.querySelector('a#initPlayer').innerHTML = "<i class='fa fa-play'></i> Start";
+		}
+	}
 }
 </script>
 @endsection	

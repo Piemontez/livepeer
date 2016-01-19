@@ -13,6 +13,7 @@
 
 var LP = this.LP = function() {};
 var isTrace = true;
+
 var socketConstraint = {
 	'securite'	: 'ws',
 	'host'		: 'localhost',
@@ -127,6 +128,9 @@ LP.Peer.prototype = {
 		this.obs[ev].subscribe(func);
 	},
 	
+	stop: function() {
+		this.connection.close();
+	},
 
 	onicecandidate: function(event) 
 	{
@@ -250,6 +254,10 @@ LP.Socket.prototype = {
 		this.obs[ev].subscribe(func);
 	},
 
+	stop: function() {
+		this.websocket.close();
+	},
+
 	send: function(func, token, obj) {
 		if (obj === undefined) {
 			obj = {};
@@ -265,6 +273,7 @@ LP.Socket.prototype = {
 
 LP.Broadcast = function() {
 	this.obs = [];
+	this.running = true;
 	this.socket			= null;
 	this.localMediaStream	= null;
 	this.nodes = [];
@@ -272,7 +281,7 @@ LP.Broadcast = function() {
 
 LP.Broadcast.init = function() {
 	var broadcast = new LP.Broadcast();
-	
+
 	broadcast.obs['newpeer']	= new Observer();
 	
 	broadcast.getUserMedia();
@@ -287,8 +296,7 @@ LP.Broadcast.init = function() {
 		case 'need_offer':
 			var peer = broadcast.createPeer();
 
-			//peer.addStream(broadcast.localMediaStream);
-			peer.addStream(broadcast.teste.stream);
+			peer.addStream(broadcast.localMediaStream);
 
 			peer.on('createoffer', function(desc) {
 				peer.setLocalDescription(desc);
@@ -326,6 +334,19 @@ LP.Broadcast.prototype = {
 		this.obs[ev].subscribe(func);
 	},
 
+	isRunning: function() {
+		return this.running;
+	},
+	
+	stop: function() {
+		this.socket.stop();
+		this.nodes.forEach(function(node) {
+			node.stop();
+		});
+		this.localMediaStream.stop();
+		this.running = false;
+	},
+
 	createPeer: function() {
 		var newPeer = LP.Peer.init();
 		this.nodes[ newPeer.generateToken() ] = newPeer;
@@ -333,8 +354,6 @@ LP.Broadcast.prototype = {
 		return newPeer;
 	},
 
-	teste: null,
-	
 	getUserMedia: function() {
 		trace('Get UserMedia');
 
@@ -343,31 +362,6 @@ LP.Broadcast.prototype = {
 		.then(function(lmStream) {
 			trace('UserMedia received' + lmStream);
 			broadcast.setLocalMediaStream(lmStream);
-
-			var audioCtx = new AudioContext();
-
-            var source = audioCtx.createMediaStreamSource(lmStream);
-			//var scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
-			var scriptNode = audioCtx.createBiquadFilter();
-			//var scriptNode = audioCtx.createDelayNode();
-	        var peer = audioCtx.createMediaStreamDestination();
-
-			scriptNode.onaudioprocess = function(audioProcessingEvent) {
-				//console.log(audioProcessingEvent);
-			};
-
-			source.connect(scriptNode);
-			scriptNode.connect(peer);
-
-			broadcast.teste = peer;
-			
-			//scriptNode.connect(audioCtx.destination);
-
-			  //scriptNode.connect(audioCtx.destination);
-
-			//var audio2 = document.querySelector('audio#audio2');
-			  //audio2.srcObject = scriptNode.stream;
-
 		}).catch(error);
 	},
 	
@@ -389,13 +383,14 @@ LP.Broadcast.prototype = {
 // Distinct for parameter in constructor
 LP.Player = function(obj, type) {
 	this.obs	= [];
+	this.running = true; 
 	this.socket	= null;
 	this.node	= null; 
 }
 
 LP.Player.init = function(obj, type) {
 	var player	= new LP.Player();
-	
+
 	player.obs['newpeer']	= new Observer();
  
 	var socket	= player.socket	= LP.Socket.init();
@@ -451,6 +446,16 @@ LP.Player.prototype = {
 		this.obs[ev].subscribe(func);
 	},
 
+	isRunning: function() {
+		return this.running;
+	},
+	
+	stop: function() {
+		//this.socket	= null;
+		//this.node	= null;
+		this.running = false;
+	},
+
 	onAddStreamCallback: function(event) {
 		trace('Stream added'+ event);
 		this.sendSuccessCallback(event);
@@ -477,46 +482,43 @@ LP.Player.prototype = {
 /*
  * Live Peer Interceptor
  */	
-var
-LPI = this.LPI = function(obj) {
-	return LP.I.init(obj);	
-};
 
-LP.I = LP.prototype = {
-	type: "peer",
-	init: function(obj) {
-		if (typeof obj !== "object") return;
+LP.Interceptor = function() {
+
+
+}
+
+LP.Interceptor.init = function(token) {
+	trace('Starting Tracker');
+
+	var tracker = new LP.Tracker();
+	
+	return tracker;
+}
+
+LP.Interceptor.prototype = {
 		
-		if (obj._peerStarted === undefined) {
-			throw new Error( "Peer not started" );
-		}
-		
-		if (obj._lpiStarted === undefined) {
-			obj._lpiStarted = true;
-			obj.peer += this;
-		}
-		return obj.peer;
-	}
-};
+}
 
 /*
  * Live Peer Tracker
  */
-var
-LPT = this.LPT = function(obj) {
-	return LP.T.init(obj);	
-};
-LP.T = LP.prototype = {
-	init: function(obj) {
-		if (typeof obj !== "object") return;
+LP.Tracker = function() {
 
-		if (obj._lptStarted === undefined) {
-			obj._lptStarted = true;
-		}
-		return this;
 
-	}
-};
+}
+
+LP.Tracker.init = function(token) {
+	trace('Starting Tracker');
+
+	var tracker = new LP.Tracker();
+	
+	return tracker;
+}
+
+LP.Tracker.prototype = {
+		
+}
 
 })()
 
@@ -536,3 +538,51 @@ LP.T = LP.prototype = {
 // http://www.html5rocks.com/en/tutorials/webrtc/basics/?redirect_from_locale=pt
 // https://webrtc.github.io/samples/src/content/peerconnection/audio/
 // https://github.com/webrtc/samples/blob/gh-pages/src/content/peerconnection/audio/js/main.js#L241
+
+/*
+
+			var audioCtx = new AudioContext();
+
+            var source = audioCtx.createMediaStreamSource(lmStream);
+			var scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+		    //var scriptNode = context.createJavaScriptNode();
+		    //var scriptNode = context.createJavaScriptNode(2048, 2, 2);
+	        var peer = audioCtx.createMediaStreamDestination();
+
+			scriptNode.onaudioprocess = function(audioProcessingEvent) {
+			  // The input buffer is the song we loaded earlier
+			  var inputBuffer = audioProcessingEvent.inputBuffer;
+
+			  // The output buffer contains the samples that will be modified and played
+			  var outputBuffer = audioProcessingEvent.outputBuffer;
+
+			  // Loop through the output channels (in this case there is only one)
+			  for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+			    var inputData = inputBuffer.getChannelData(channel);
+			    var outputData = outputBuffer.getChannelData(channel);
+
+			    // Loop through the 4096 samples
+			    for (var sample = 0; sample < inputBuffer.length; sample++) {
+			      // make output equal to the same as the input
+			      outputData[sample] = inputData[sample];
+
+			      // add noise to each output sample
+			      outputData[sample] += ((Math.random() * 2) - 1) * 0.2;         
+			    }
+			  }
+			};
+
+			source.connect(scriptNode);
+			scriptNode.connect(peer);
+			//source.connect(peer);
+
+			broadcast.teste = peer;
+			
+			//scriptNode.connect(audioCtx.destination);
+
+			//scriptNode.connect(audioCtx.destination);
+
+			var audio2 = document.querySelector('audio#audio2');
+			audio2.srcObject = peer.stream;
+
+*/

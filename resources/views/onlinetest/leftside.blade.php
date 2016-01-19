@@ -35,7 +35,14 @@
 	            </dl>
 	            </div>
             </div>
-	        <a id ="transmitir" class="pull-right btn btn-primary" href="{{ URL::route('leftsidetest') }}" role="button">Iniciar transmissão via broadcast &raquo;</a>
+	        <div class="pull-right form-inline">
+	          <div class="checkbox">
+			    <label>
+			      <input type="checkbox" id="with_peer"> With P2P
+			    </label>
+			  </div>
+	          <a id ="initBroadcast" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
+            </div>
         </div>
       </div><!-- /row --><br/>
 
@@ -87,10 +94,7 @@
         </div>
       </div><!-- /row -->
     </div><!-- /container -->
-    
-    
-    
-    <audio id="audio2" hidden="hidden" autoplay controls></audio>
+
 	@endsection
 	
 @section('postjs')
@@ -99,18 +103,29 @@
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script src="/js/livepeer/teste.js"></script>
 <script type="text/javascript">
-function startPeer()
-{
-	var broadcast = LP.Broadcast.init();
-	broadcast.on('newpeer', function(newpeer) {
-		newpeer.on('icecandidate', iceCallbackDisplay);
-		sentDisplay(newpeer);
-	});
-}
+window.onload = function() {
 
-document.querySelector('a#transmitir').onclick = function(e) {
-	e.preventDefault();
-	startPeer();
+	var broadcast = null;
+
+	document.querySelector('a#initBroadcast').onclick = function(e) {
+		e.preventDefault();
+		if (broadcast === null || !broadcast.isRunning())
+		{
+			broadcast = LP.Broadcast.init();
+			broadcast.on('newpeer', function(newpeer) {
+				newpeer.on('icecandidate', iceCallbackDisplay);
+				sentDisplay(newpeer);
+			});
+
+			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-warning");
+			document.querySelector('a#initBroadcast').innerHTML = "Stop";
+		} else {
+			broadcast.stop();
+			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-primary");
+			document.querySelector('a#initBroadcast').innerHTML = "<i class='fa fa-play'></i> Start";
+		}
+		
+	}
 }
 </script>
 @endsection	
