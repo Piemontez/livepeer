@@ -94,12 +94,12 @@
         </div>
       </div><!-- /row -->
     </div><!-- /container -->
-
+<audio id="audio2" hidden="hidden" autoplay controls></audio>
 	@endsection
 	
 @section('postjs')
 <script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
-<script src="https://webrtc.github.io/samples/src/js/adapter.js"></script>
+<script src="/js/livepeer/html5rocks_adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script src="/js/livepeer/teste.js"></script>
 <script type="text/javascript">
@@ -109,6 +109,7 @@ window.onload = function() {
 
 	document.querySelector('a#initBroadcast').onclick = function(e) {
 		e.preventDefault();
+
 		if (broadcast === null || !broadcast.isRunning())
 		{
 			broadcast = LP.Broadcast.init();
@@ -116,7 +117,7 @@ window.onload = function() {
 				newpeer.on('icecandidate', iceCallbackDisplay);
 				sentDisplay(newpeer);
 			});
-
+			
 			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-warning");
 			document.querySelector('a#initBroadcast').innerHTML = "Stop";
 		} else {

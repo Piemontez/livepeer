@@ -77,7 +77,7 @@
 	
 @section('postjs')
 <script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
-<script src="https://webrtc.github.io/samples/src/js/adapter.js"></script>
+<script src="/js/livepeer/html5rocks_adapter.js"></script>
 <script src="/js/livepeer/livepeer_0_0.js"></script>
 <script src="/js/livepeer/teste.js"></script>
 

@@ -12,12 +12,13 @@
 (function(){
 
 var LP = this.LP = function() {};
-var isTrace = true;
+LP.audioContext = new AudioContext();
+LP.isTrace = true;
 
 var socketConstraint = {
 	'securite'	: 'ws',
-	'host'		: 'localhost',
-	'port'		: '8080',
+	'host'		: 'livepeer.local',
+	'port'		: '8081',
 	'key'		: 'ws',
 	uri: function() {
 		return this.securite + '://' + this.host + ':' + this.port + '/' + this.key;
@@ -30,7 +31,7 @@ var servers = {
 	]
 };
 var pcConstraints = {
-	'optional': []
+	'optional': [{RtpDataChannels: true}]
 };
 var offerOptions = {
 	offerToReceiveAudio: 1,
@@ -46,7 +47,7 @@ function error(err) {
 	console.error(err);
 }
 function trace(obj, msg) {
-	if (isTrace) {
+	if (LP.isTrace) {
 		if (msg === undefined) {
 			console.log(obj);
 		}
@@ -86,6 +87,7 @@ Observer.prototype = {
 
 LP.Peer = function() {
 	this.obs = [];
+	this._streamDestination = null;//OutputReader
 	this._token = null;
 	this._description= null;
 	this._candidates	= [];
@@ -140,9 +142,13 @@ LP.Peer.prototype = {
 	description: function() {
 		return this._description;
 	},
+	
+	createStreamDestination: function() {
+		return this._streamDestination = LP.audioContext.createMediaStreamDestination();
+	},
 
-	addStream: function(localStream) {
-		this.connection.addStream(localStream);
+	addStream: function(streamDest) {
+		this.connection.addStream(streamDest.stream);
 	},
 
 	createOffer: function() {
@@ -183,6 +189,7 @@ LP.Peer.prototype = {
 	},
 
 	addRemoteIceCandidate: function(candidate) {
+		if (candidate !== null)
 		this.connection.addIceCandidate(new RTCIceCandidate(candidate),
 			function() {
 				trace('ICE candidate added');
@@ -245,11 +252,6 @@ LP.Socket.init = function() {
 }
 
 LP.Socket.prototype = {
-	/*
-	 * addEventListener: document.addEventListener || document.attachEvent,
-	 * dispatchEvent: document.dispatchEvent, fireEvent: document.fireEvent,
-	 */
-
 	on: function(ev, func) {
 		this.obs[ev].subscribe(func);
 	},
@@ -276,12 +278,13 @@ LP.Broadcast = function() {
 	this.running = true;
 	this.socket			= null;
 	this.localMediaStream	= null;
+	this.mediaStreamSource	= null;//InputReader
 	this.nodes = [];
 }
 
 LP.Broadcast.init = function() {
 	var broadcast = new LP.Broadcast();
-
+	
 	broadcast.obs['newpeer']	= new Observer();
 	
 	broadcast.getUserMedia();
@@ -295,14 +298,53 @@ LP.Broadcast.init = function() {
 		switch(message.func) {
 		case 'need_offer':
 			var peer = broadcast.createPeer();
+			
+//	        var microphone = LP.audioContext.createMediaStreamSource(broadcast.localMediaStream);
+//	        var filter = LP.audioContext.createBiquadFilter();
+//	        var peer2 = LP.audioContext.createMediaStreamDestination();
+//	        microphone.connect(filter);
+//	        filter.connect(peer2);
+//	        microphone.connect(peer2);
+//	        microphone.connect(LP.audioContext.destination);
+//	        peer.addStream(peer2);
+//			peer.addStream({stream:broadcast.localMediaStream});
 
-			peer.addStream(broadcast.localMediaStream);
+			var destination = peer.createStreamDestination();
 
+			var scriptNode = LP.audioContext.createScriptProcessor(4096, 1, 1);
+			broadcast.mediaStreamSource.connect(scriptNode);
+			scriptNode.connect(destination);
+
+			scriptNode.onaudioprocess = function(audioProcessingEvent) {
+			  var inputBuffer = audioProcessingEvent.inputBuffer;
+			  var outputBuffer = audioProcessingEvent.outputBuffer;
+
+			  for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+			    var inputData = inputBuffer.getChannelData(channel);
+			    var outputData = outputBuffer.getChannelData(channel);
+
+			    for (var sample = 0; sample < inputBuffer.length; sample++) {
+			      	//outputData[sample] = inputData[sample];
+			      	outputData[sample] += ((Math.random() * 2) - 1) * 0.2;
+			    }
+			  }
+			};
+
+			peer.addStream(destination)
+			//scriptNode.connect(LP.audioContext.destination);
+/*			var audio2 = document.querySelector('audio#audio2');
+			  audio2.srcObject = destination.stream;*/
+			  
+			//peer.addStream(broadcast.mediaStreamSource);
+
+
+			setTimeout(function(){
 			peer.on('createoffer', function(desc) {
 				peer.setLocalDescription(desc);
 				socket.send('offer', peer.token(), {sdp: peer.description()});
 			});
 			peer.createOffer();
+			}, 2000);
 			break;
 		case 'answer':
 			var peer = broadcast.nodes[message.token];
@@ -361,12 +403,13 @@ LP.Broadcast.prototype = {
 		navigator.mediaDevices.getUserMedia(mediaConstraints)
 		.then(function(lmStream) {
 			trace('UserMedia received' + lmStream);
-			broadcast.setLocalMediaStream(lmStream);
+			broadcast.setLocalMediaStream(lmStream); 
 		}).catch(error);
 	},
 	
 	setLocalMediaStream: function(lmStream) {
 		this.localMediaStream = lmStream;
+		this.mediaStreamSource = LP.audioContext.createMediaStreamSource(lmStream);
 	},
 
 	setOpusCodec: function() {
@@ -390,7 +433,7 @@ LP.Player = function(obj, type) {
 
 LP.Player.init = function(obj, type) {
 	var player	= new LP.Player();
-
+	
 	player.obs['newpeer']	= new Observer();
  
 	var socket	= player.socket	= LP.Socket.init();
@@ -415,7 +458,9 @@ LP.Player.init = function(obj, type) {
 				player.node.on('createanswer', function(desc) {
 					player.node.setLocalDescription(desc);
 					socket.send('answer', player.node.token(),{ sdp: player.node.description() });
-					socket.send('need_icecandidates', player.node.token());
+					setTimeout(function() {//TODO adicionar de forma progreciva também
+						socket.send('need_icecandidates', player.node.token());
+					}, 2000);
 				});
 	
 				player.node.setRemoteDescription(message.sdp);
@@ -427,6 +472,7 @@ LP.Player.init = function(obj, type) {
 				if (Array.isArray(message.ices))
 				{
 					message.ices.forEach(function(ice) {
+						console.log(ice);
 						player.node.addRemoteIceCandidate(ice);
 					});
 					// socket.send('icecandidates', player.node.token(), { ices:
@@ -466,17 +512,9 @@ LP.Player.prototype = {
 	},
 
 	sendSuccessCallback: function(event) {
-		// audio2.srcObject = e.stream;
-		// phoneOutput = new AudioContext();
-
-		// var aa = phoneOutput.createMediaStreamSource(event.stream);
-		// aa.connect(phoneOutput.destination);
 		var audio2 = document.querySelector('audio#audio2');
 		  audio2.srcObject = event.stream;
-		  
-		  
 	}
-	
 }
 
 /*
@@ -541,7 +579,6 @@ LP.Tracker.prototype = {
 
 /*
 
-			var audioCtx = new AudioContext();
 
             var source = audioCtx.createMediaStreamSource(lmStream);
 			var scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);

@@ -7,7 +7,7 @@ return [
      * MUST match JS `new WebSocket('ws://$httpHost')
      */
 
-    'httpHost' => 'localhost',
+    'httpHost' => 'livepeer.local',
 
 
     /*
@@ -15,12 +15,12 @@ return [
      * Flash on 843 otherwise expecting Flash to be proxied through 8843
      */
 
-    'port' => '8080',
+    'port' => '8081',
 
 
     /*
      *IP address to bind to. Default is localhost/proxy only.
      *'0.0.0.0' for any machine.
      */
-    'address' => '127.0.0.1'
+    'address' => '0.0.0.0'
 ];
