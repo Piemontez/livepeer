@@ -143,6 +143,10 @@ LP.Peer.prototype = {
 		return this._description;
 	},
 	
+	streamDestination: function() {
+		return this._streamDestination;
+	},
+
 	createStreamDestination: function() {
 		return this._streamDestination = LP.audioContext.createMediaStreamDestination();
 	},
@@ -288,6 +292,7 @@ LP.Broadcast.init = function() {
 	broadcast.obs['newpeer']	= new Observer();
 	
 	broadcast.getUserMedia();
+	//broadcast.createScriptProcessor();
 
 	var socket = broadcast.socket = LP.Socket.init();
 	socket.on('open', function() {
@@ -298,53 +303,16 @@ LP.Broadcast.init = function() {
 		switch(message.func) {
 		case 'need_offer':
 			var peer = broadcast.createPeer();
+
+			peer.addStream( peer.streamDestination() );
 			
-//	        var microphone = LP.audioContext.createMediaStreamSource(broadcast.localMediaStream);
-//	        var filter = LP.audioContext.createBiquadFilter();
-//	        var peer2 = LP.audioContext.createMediaStreamDestination();
-//	        microphone.connect(filter);
-//	        filter.connect(peer2);
-//	        microphone.connect(peer2);
-//	        microphone.connect(LP.audioContext.destination);
-//	        peer.addStream(peer2);
-//			peer.addStream({stream:broadcast.localMediaStream});
-
-			var destination = peer.createStreamDestination();
-
-			var scriptNode = LP.audioContext.createScriptProcessor(4096, 1, 1);
-			broadcast.mediaStreamSource.connect(scriptNode);
-			scriptNode.connect(destination);
-
-			scriptNode.onaudioprocess = function(audioProcessingEvent) {
-			  var inputBuffer = audioProcessingEvent.inputBuffer;
-			  var outputBuffer = audioProcessingEvent.outputBuffer;
-
-			  for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-			    var inputData = inputBuffer.getChannelData(channel);
-			    var outputData = outputBuffer.getChannelData(channel);
-
-			    for (var sample = 0; sample < inputBuffer.length; sample++) {
-			      	//outputData[sample] = inputData[sample];
-			      	outputData[sample] += ((Math.random() * 2) - 1) * 0.2;
-			    }
-			  }
-			};
-
-			peer.addStream(destination)
-			//scriptNode.connect(LP.audioContext.destination);
-/*			var audio2 = document.querySelector('audio#audio2');
-			  audio2.srcObject = destination.stream;*/
-			  
-			//peer.addStream(broadcast.mediaStreamSource);
-
-
-			setTimeout(function(){
 			peer.on('createoffer', function(desc) {
 				peer.setLocalDescription(desc);
 				socket.send('offer', peer.token(), {sdp: peer.description()});
 			});
+
 			peer.createOffer();
-			}, 2000);
+
 			break;
 		case 'answer':
 			var peer = broadcast.nodes[message.token];
@@ -391,11 +359,12 @@ LP.Broadcast.prototype = {
 
 	createPeer: function() {
 		var newPeer = LP.Peer.init();
+		newPeer.createStreamDestination();
 		this.nodes[ newPeer.generateToken() ] = newPeer;
 		this.obs['newpeer'].fire(newPeer);
 		return newPeer;
 	},
-
+	
 	getUserMedia: function() {
 		trace('Get UserMedia');
 
@@ -403,7 +372,10 @@ LP.Broadcast.prototype = {
 		navigator.mediaDevices.getUserMedia(mediaConstraints)
 		.then(function(lmStream) {
 			trace('UserMedia received' + lmStream);
+
 			broadcast.setLocalMediaStream(lmStream); 
+			broadcast.createScriptProcessor();
+
 		}).catch(error);
 	},
 	
@@ -412,11 +384,49 @@ LP.Broadcast.prototype = {
 		this.mediaStreamSource = LP.audioContext.createMediaStreamSource(lmStream);
 	},
 
+	sampleRate: function() {
+		return this.mediaStreamSource.context.sampleRate;
+	},
+
+	createScriptProcessor: function() {
+		var processor = LP.audioContext.createScriptProcessor(4096, 1, 1);
+		processor.connect(LP.audioContext.createMediaStreamDestination());
+		
+		this.mediaStreamSource.connect(processor);
+		
+		var broadcast = this;
+		processor.onaudioprocess = function(audioProcessingEvent) {
+			broadcast.receiveCallbackSuccess(audioProcessingEvent.inputBuffer, audioProcessingEvent.outputBuffer)
+		}
+	},
+	
 	setOpusCodec: function() {
 		
 	},
-}
+	
+	receiveCallbackSuccess: function(inputBuffer, outputBuffer) 
+	{
+		for (var key in this.nodes) 
+		{
+			var node = this.nodes[key];
 
+			var source = LP.audioContext.createBufferSource();
+			source.buffer = outputBuffer; //= LP.audioContext.createBuffer(1, 4096, broadcast.sampleRate());
+			source.connect( node.streamDestination() );
+				
+			for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+				var inputData = inputBuffer.getChannelData(channel);
+				var outputData = outputBuffer.getChannelData(channel);
+			
+				for (var sample = 0; sample < outputData.length; sample++) {
+			      	outputData[sample] = inputData[sample];
+				}
+			}
+			source.start();
+		}
+
+	}
+}
 
 /*
  * Player
@@ -441,7 +451,6 @@ LP.Player.init = function(obj, type) {
 		socket.send('need_offer');
 	});
 	socket.on('message', function(message) {
-
 		message = JSON.parse(message);
 		switch(message.func) {
 		case 'offer':
@@ -460,7 +469,7 @@ LP.Player.init = function(obj, type) {
 					socket.send('answer', player.node.token(),{ sdp: player.node.description() });
 					setTimeout(function() {//TODO adicionar de forma progreciva também
 						socket.send('need_icecandidates', player.node.token());
-					}, 2000);
+					}, 800);
 				});
 	
 				player.node.setRemoteDescription(message.sdp);
