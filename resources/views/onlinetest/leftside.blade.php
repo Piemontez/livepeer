@@ -105,6 +105,7 @@
 <script type="text/javascript">
 window.onload = function() {
 
+	var tracker = null;
 	var broadcast = null;
 
 	document.querySelector('a#initBroadcast').onclick = function(e) {
@@ -112,18 +113,31 @@ window.onload = function() {
 
 		if (broadcast === null || !broadcast.isRunning())
 		{
-			broadcast = LP.Broadcast.init();
-			broadcast.on('newpeer', function(newpeer) {
+			if (document.querySelector('input#with_peer').checked) {
+				tracker = LP.Tracker.init();
+				setTimeout(function() {
+					broadcast = LP.BroadcastIntercepted.init();
+				}, 1000);
+			} else {
+				broadcast = LP.Broadcast.init();
+			}
+			
+			/*broadcast.on('newpeer', function(newpeer) {
 				newpeer.on('icecandidate', iceCallbackDisplay);
 				sentDisplay(newpeer);
-			});
+			});*/
 			
 			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-warning");
 			document.querySelector('a#initBroadcast').innerHTML = "Stop";
+			document.querySelector('input#with_peer').setAttribute("disabled", "disabled");
 		} else {
+			if (tracker !== null) {
+				tracker.stop();
+			}
 			broadcast.stop();
 			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-primary");
 			document.querySelector('a#initBroadcast').innerHTML = "<i class='fa fa-play'></i> Start";
+			document.querySelector('input#with_peer').removeAttribute("disabled", "disabled");
 		}
 		
 	}

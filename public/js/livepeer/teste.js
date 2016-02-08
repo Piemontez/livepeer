@@ -14,7 +14,6 @@ var globalBytes = -1;
 var globalPackets = -1;
 
 function sentDisplay(newPeer) {
-	
 	if (globalPackets < 0) 
 	{
 		globalBytes = 0; 
