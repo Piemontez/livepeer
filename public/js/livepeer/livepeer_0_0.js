@@ -31,16 +31,16 @@ var dfServers = {
 		{"url": "stun:stun.l.google.com:19302"}
 	]
 };
-var dfPeerConstraints = {
+var dfPeerConstraints = null; off = {
 	'optional': [{RtpDataChannels: true}]
 };
 
 var dfDataChannelOptions = {
 	ordered: false, // do not guarantee order
-	maxRetransmitTime: 3000, // in milliseconds
+	maxRetransmitTime: 1000, // in milliseconds
 }
 
-var dfOfferOptions = {
+var dfOfferOptions = null; off = {
 	offerToReceiveAudio: 0,
 	offerToReceiveVideo: 0,
 	voiceActivityDetection: false
@@ -139,6 +139,10 @@ LP.Peer.init = function(token, servers, constraints) {
 	});
 	
 	peer.connection = new RTCPeerConnection(servers, constraints);
+	
+	peer.connection.ondatachannel = function(event) {
+		peer.createDataChannel(null, event.channel);
+	};
 	peer.connection.onicecandidate = function(event) {
 		trace('On Ice Candidate');
 		peer.obs['icecandidate'].fire(event);
@@ -181,34 +185,38 @@ LP.Peer.prototype = {
 		this.connection.addStream(streamDest.stream);
 	},
 	
-	createDataChannel: function(opts) {
+	createDataChannel: function(opts, dataChannel) {
 		if (opts === undefined) {
 			opts = dfDataChannelOptions;
 		}
 		var peer = this;
-		this.dataChannel = this.connection.createDataChannel("myLabel", opts);
+		if (dataChannel === undefined) {
+			peer.dataChannel = this.connection.createDataChannel("myLabel" + Math.random(), opts);
+		} else {
+			peer.dataChannel = dataChannel;
+		}
 
-		this.dataChannel.onerror = function (error) {
+		peer.dataChannel.onerror = function (error) {
 			error("Data Channel Error:", error);
 		};
 
-		this.dataChannel.onmessage = function (event) {
+		peer.dataChannel.onmessage = function (event) {
 			trace("Got Data Channel Message.");
 			peer.obs['message'].fire(event.data);
 		};
 
-		this.dataChannel.onopen = function () {
+		peer.dataChannel.onopen = function () {
 			trace("Data channel open");
 			peer.obs['open'].fire();
 		};
 
-		this.dataChannel.onclose = function () {
+		peer.dataChannel.onclose = function () {
 			trace("The Data Channel is Closed");
 		};
 	},
 	
 	send: function(message) {
-		this.dataChannel.send(message);
+		this.dataChannel.send(message, 'teste');
 	},
 
 	createOffer: function() {
@@ -356,47 +364,47 @@ LP.Broadcast.prototype = {
 		// broadcast.createScriptProcessor();
 
 		var socket = broadcast.socket = LP.Socket.init();
-		socket.on('open', function() {
-			broadcast.getUserMedia();
-		});
-		socket.on('message', function(message) {
-			message = JSON.parse(message);
-			switch(message.func) {
-			case 'need_offer':
-				var peer = broadcast.createPeer();
-
-				peer.addStream( peer.streamDestination );
-
-				peer.on('createoffer', function(desc) {
-					peer.setLocalDescription( desc );
-
-					socket.send('offer', peer.token, {sdp: peer.description});
-				});
-
-				peer.createOffer();
-
-				break;
-			case 'answer':
-				var peer = broadcast.nodes[message.token];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					peer.setRemoteDescription(message.sdp);
-				} 
-				break;
-			/*
-			 * case 'icecandidates': var peer = broadcast.nodes[message.token]; if
-			 * (LP.Peer.prototype.isPrototypeOf(peer)) { if
-			 * (Array.isArray(message.ices)) { message.ices.forEach(function(ice) {
-			 * peer.addRemoteIceCandidate(ice); }); } } break;
-			 */
-			case 'need_icecandidates':
-				var peer = broadcast.nodes[message.token];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					socket.send('icecandidates', peer.token, { ices: peer.candidates });
-				}
-			break;
-			};
-			return;
-		});		
+//		socket.on('open', function() {
+//			broadcast.getUserMedia();
+//		});
+//		socket.on('message', function(message) {
+//			message = JSON.parse(message);
+//			switch(message.func) {
+//			case 'need_offer':
+//				var peer = broadcast.createPeer();
+//
+//				peer.addStream( peer.streamDestination );
+//
+//				peer.on('createoffer', function(desc) {
+//					peer.setLocalDescription( desc );
+//
+//					socket.send('offer', peer.token, {sdp: peer.description});
+//				});
+//
+//				peer.createOffer();
+//
+//				break;
+//			case 'answer':
+//				var peer = broadcast.nodes[message.token];
+//				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+//					peer.setRemoteDescription(message.sdp);
+//				} 
+//				break;
+//			/*
+//			 * case 'icecandidates': var peer = broadcast.nodes[message.token]; if
+//			 * (LP.Peer.prototype.isPrototypeOf(peer)) { if
+//			 * (Array.isArray(message.ices)) { message.ices.forEach(function(ice) {
+//			 * peer.addRemoteIceCandidate(ice); }); } } break;
+//			 */
+//			case 'need_icecandidates':
+//				var peer = broadcast.nodes[message.token];
+//				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+//					socket.send('icecandidates', peer.token, { ices: peer.candidates });
+//				}
+//			break;
+//			};
+//			return;
+//		});
 	},
 
 	on: function(ev, func) {
@@ -710,10 +718,10 @@ LP.Interceptor.prototype = {
 	createTrackerPeer: function()  {
 		
 		var tracker = this.tracker = LP.Peer.init(null, dfServers, null);
-		tracker.createDataChannel();
+		//tracker.createDataChannel();
 		
 		tracker.on('open', function() {
-			tracker.send('interceptor messaga');
+			tracker.send('interceptor message');
 		});
 		tracker.on('message', function(message) {
 			console.log(message);
@@ -847,7 +855,7 @@ LP.Tracker.prototype = {
 		newPeer.createStreamDestination();
 
 		newPeer.on('open', function() {
-			newPeer.send('tracker messaga');
+			newPeer.send('tracker message');
 		});
 		newPeer.on('message', function(message) {
 			console.log(message);
