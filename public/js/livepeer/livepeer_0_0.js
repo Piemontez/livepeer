@@ -90,6 +90,73 @@ Observer.prototype = {
 };
 
 /*
+ * Socket
+ */
+//constructor class
+LP.Socket = function() {
+	this.obs = [];
+	this.websocket = null;
+}
+
+//static function
+LP.Socket.init = function() {
+	trace('Starting Socket');
+
+	var socket = new LP.Socket();
+	socket.offAll('open');
+	socket.offAll('close');
+	socket.offAll('message');
+	socket.offAll('error');
+    
+	var websocket = socket.websocket = new WebSocket(socketConstraint.uri());
+
+    websocket.onopen = function(evt) {
+    	trace('Socket Open');
+    	socket.obs['open'].fire();
+    };
+
+    websocket.onclose = function(evt) { 
+    	trace('Socket Close');
+    	socket.obs['close'].fire();
+    };
+
+    websocket.onmessage = function(evt) {
+    	trace('Socket Message Receive ' + evt.data);
+    	socket.obs['message'].fire(evt.data);
+    };
+    
+    websocket.onerror = function(evt) {
+    	trace('Socket Message Error ' + evt.data);
+    	socket.obs['error'].fire(evt.data);
+    };
+
+	return socket;
+}
+
+LP.Socket.prototype = {
+	on: function(ev, func) {
+		this.obs[ev].subscribe(func);
+	},
+
+	offAll: function(ev) {
+		this.obs[ev] = new Observer();
+	},
+
+	stop: function() {
+		this.websocket.close();
+	},
+
+	send: function(func, token, obj) {
+		if (obj === undefined) {
+			obj = {};
+		}
+		obj.func = func;
+		obj.token = token;
+		this.websocket.send(JSON.stringify(obj));		
+	},
+}
+
+/*
  * Peer
  */
 
@@ -201,7 +268,7 @@ LP.Peer.prototype = {
 		};
 
 		peer.dataChannel.onmessage = function (event) {
-			trace("Got Data Channel Message.");
+			trace("Got Data Channel Message:" + event.data);
 			peer.obs['message'].fire(event.data);
 		};
 
@@ -215,8 +282,12 @@ LP.Peer.prototype = {
 		};
 	},
 	
-	send: function(message) {
-		this.dataChannel.send(message, 'teste');
+	send: function(func, obj) {
+		if (obj === undefined) {
+			obj = {};
+		}
+		obj.func = func;
+		this.dataChannel.send(JSON.stringify(obj));		
 	},
 
 	createOffer: function() {
@@ -267,78 +338,12 @@ LP.Peer.prototype = {
 		return this.token = Math.random();
 	}
 }
-
-/*
- * Socket
- */
-//constructor class
-LP.Socket = function() {
-	this.obs = [];
-	this.websocket = null;
-}
-
-//static function
-LP.Socket.init = function() {
-	trace('Starting Socket');
-
-	var socket = new LP.Socket();
-	socket.offAll('open');
-	socket.offAll('close');
-	socket.offAll('message');
-	socket.offAll('error');
-    
-	var websocket = socket.websocket = new WebSocket(socketConstraint.uri());
-
-    websocket.onopen = function(evt) {
-    	trace('Socket Open');
-    	socket.obs['open'].fire();
-    };
-
-    websocket.onclose = function(evt) { 
-    	trace('Socket Close');
-    	socket.obs['close'].fire();
-    };
-
-    websocket.onmessage = function(evt) {
-    	trace('Socket Message Receive ' + evt.data);
-    	socket.obs['message'].fire(evt.data);
-    };
-    
-    websocket.onerror = function(evt) {
-    	trace('Socket Message Error ' + evt.data);
-    	socket.obs['error'].fire(evt.data);
-    };
-
-	return socket;
-}
-
-LP.Socket.prototype = {
-	on: function(ev, func) {
-		this.obs[ev].subscribe(func);
-	},
-
-	offAll: function(ev) {
-		this.obs[ev] = new Observer();
-	},
-
-	stop: function() {
-		this.websocket.close();
-	},
-
-	send: function(func, token, obj) {
-		if (obj === undefined) {
-			obj = {};
-		}
-		obj.func = func;
-		obj.token = token;
-		this.websocket.send(JSON.stringify(obj));		
-	},
-}
 /*
  * Broadcast
  */
 //constructor class
 LP.Broadcast = function() {
+	this.type = ['sender'];
 	this.obs = [];
 	this.running = true;
 	this.socket			= null;
@@ -364,47 +369,47 @@ LP.Broadcast.prototype = {
 		// broadcast.createScriptProcessor();
 
 		var socket = broadcast.socket = LP.Socket.init();
-//		socket.on('open', function() {
-//			broadcast.getUserMedia();
-//		});
-//		socket.on('message', function(message) {
-//			message = JSON.parse(message);
-//			switch(message.func) {
-//			case 'need_offer':
-//				var peer = broadcast.createPeer();
-//
-//				peer.addStream( peer.streamDestination );
-//
-//				peer.on('createoffer', function(desc) {
-//					peer.setLocalDescription( desc );
-//
-//					socket.send('offer', peer.token, {sdp: peer.description});
-//				});
-//
-//				peer.createOffer();
-//
-//				break;
-//			case 'answer':
-//				var peer = broadcast.nodes[message.token];
-//				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-//					peer.setRemoteDescription(message.sdp);
-//				} 
-//				break;
-//			/*
-//			 * case 'icecandidates': var peer = broadcast.nodes[message.token]; if
-//			 * (LP.Peer.prototype.isPrototypeOf(peer)) { if
-//			 * (Array.isArray(message.ices)) { message.ices.forEach(function(ice) {
-//			 * peer.addRemoteIceCandidate(ice); }); } } break;
-//			 */
-//			case 'need_icecandidates':
-//				var peer = broadcast.nodes[message.token];
-//				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-//					socket.send('icecandidates', peer.token, { ices: peer.candidates });
-//				}
-//			break;
-//			};
-//			return;
-//		});
+		socket.on('open', function() {
+			broadcast.getUserMedia();
+		});
+		socket.on('message', function(message) {
+			message = JSON.parse(message);
+			switch(message.func) {
+			case 'need_offer':
+				var peer = broadcast.createPeer();
+
+				peer.addStream( peer.streamDestination );
+
+				peer.on('createoffer', function(desc) {
+					peer.setLocalDescription( desc );
+
+					socket.send('offer', peer.token, {sdp: peer.description});
+				});
+
+				peer.createOffer();
+
+				break;
+			case 'answer':
+				var peer = broadcast.nodes[message.token];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					peer.setRemoteDescription(message.sdp);
+				} 
+				break;
+			/*
+			 * case 'icecandidates': var peer = broadcast.nodes[message.token]; if
+			 * (LP.Peer.prototype.isPrototypeOf(peer)) { if
+			 * (Array.isArray(message.ices)) { message.ices.forEach(function(ice) {
+			 * peer.addRemoteIceCandidate(ice); }); } } break;
+			 */
+			case 'need_icecandidates':
+				var peer = broadcast.nodes[message.token];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					socket.send('icecandidates', peer.token, { ices: peer.candidates });
+				}
+			break;
+			};
+			return;
+		});
 	},
 
 	on: function(ev, func) {
@@ -504,6 +509,7 @@ LP.Broadcast.prototype = {
 
 //constructor class
 LP.Player = function() {
+	this.type = ['receiver'];
 	this.obs	= [];
 	this.running = true; 
 	this.socket	= null;
@@ -523,7 +529,7 @@ LP.Player.prototype = {
 
 		var player = this;
 
-		player.createStreamDestination();
+		//player.createStreamDestination();
 
 		player.obs['newpeer']	= new Observer();
 	 
@@ -645,7 +651,9 @@ LP.Player.prototype = {
 LP.Interceptor = function() {
 	this.obs = [];
 	this.tracker = null;
-	this.socket	= null;
+	//this.socket	= null;
+	this.intercepted = null;
+	this.nodes = [];
 }
 
 //static function
@@ -665,6 +673,8 @@ LP.Interceptor.prototype = {
 	intercepet: function(obj) {
 		var interceptor = this;
 
+		interceptor.intercepted = obj;
+
 		interceptor.createTrackerPeer();
 		
 		obj.socket.offAll('open');
@@ -678,7 +688,8 @@ LP.Interceptor.prototype = {
 			message = JSON.parse(message);
 			switch(message.func) {
 			case 'tracker_sdp':
-				//if (player.node === null) { check token
+				//TODO criar chave de envio, para não conflitar quando receber duas mensagens no mesmo instante.
+				if (interceptor.tracker.token === null) {
 					interceptor.tracker.token = message.token;
 					//interceptor.tracker.obs['tracker'].fire(interceptor.tracker);
 					
@@ -694,7 +705,46 @@ LP.Interceptor.prototype = {
 					});
 		
 					interceptor.tracker.setRemoteDescription(message.sdp);
-				//}
+				}
+				break;
+			case 'need_sender':
+				if (interceptor.tracker.token == message.to)  {
+					var peer = interceptor.createPeer();
+					peer.on('createoffer', function(desc) {
+						peer.setLocalDescription( desc );
+						obj.socket.send('sender_sdp', peer.token, { to: message.token, sdp: peer.description});
+					});
+					peer.createOffer();
+				}
+				break;
+			case 'sender_sdp':
+				var peer = interceptor.nodes[message.to];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					peer.on('setremotedescription', function() {
+						peer.createAnswer();
+					});
+					peer.on('createanswer', function(desc) {
+						peer.setLocalDescription(desc);
+						obj.socket.send('answer', peer.token, { to: message.token, sdp: peer.description });
+						setTimeout(function() {// TODO adicionar de forma progressiva também
+							obj.socket.send('need_icecandidates', peer.token, { to: message.token });
+						}, 800);
+					});
+					peer.setRemoteDescription(message.sdp);
+				}
+				break;
+			case 'answer':
+				var peer = interceptor.nodes[message.to];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					peer.setRemoteDescription(message.sdp);
+				}
+				break;
+			case 'need_icecandidates':
+				var peer = interceptor.nodes[message.to];
+				if (LP.Peer.prototype.isPrototypeOf(peer)) {
+					obj.socket.send('icecandidates', peer.token, { to: message.token, ices: peer.candidates });
+					//obj.socket.send('need_icecandidates', peer.token, { to: message.token, ices: peer.candidates });
+				}
 				break;
 			case 'icecandidates':
 				if (interceptor.tracker.token == message.token)
@@ -706,7 +756,17 @@ LP.Interceptor.prototype = {
 						});
 						obj.socket.send('icecandidates', interceptor.tracker.token, { ices: interceptor.tracker.candidates });
 					}
+				} else {
+					var peer = interceptor.nodes[message.to];
+					if (LP.Peer.prototype.isPrototypeOf(peer)) { 
+						if (Array.isArray(message.ices)) { 
+							message.ices.forEach(function(ice) {
+								peer.addRemoteIceCandidate(ice); }
+							); 
+						} 
+					}
 				}
+
 				break;
 			};
 		});
@@ -714,17 +774,49 @@ LP.Interceptor.prototype = {
 		obj.receiveSuccessCallback = this.receiveSuccessCallback; 
 		obj.sendSuccessCallback = this.sendSuccessCallback; 
 	},
+
+	createPeer: function() {
+		var newPeer = LP.Peer.init();
+		
+		newPeer.createDataChannel();
+
+		newPeer.on('open', function() {
+
+		});
+		newPeer.on('message', function(message) {
+
+		});
+
+		
+		//newPeer.createStreamDestination();
+		this.nodes[ newPeer.generateToken() ] = newPeer;
+		//this.obs['newpeer'].fire(newPeer);
+		return newPeer;
+	},
 	
 	createTrackerPeer: function()  {
-		
+
+		var interceptor = this;
+
 		var tracker = this.tracker = LP.Peer.init(null, dfServers, null);
-		//tracker.createDataChannel();
 		
 		tracker.on('open', function() {
-			tracker.send('interceptor message');
+			
 		});
 		tracker.on('message', function(message) {
-			console.log(message);
+			message = JSON.parse(message);
+			switch(message.func) {
+			case 'whoareyou':
+				tracker.send('iam', {types: interceptor.intercepted.type});
+				if (interceptor.intercepted.type.indexOf('receiver') > -1) {
+					tracker.send('need_offer');
+				}
+				break;
+			case 'check_offer':
+				//TODO: trocar comunicação do webservice para com o tracker.
+				var peer = interceptor.createPeer();
+				interceptor.intercepted.socket.send('need_sender', peer.token, { to: message.token });
+			}
 		});
 
 	},
@@ -762,6 +854,8 @@ LP.BroadcastIntercepted.init = function() {
 //constructor class
 LP.PlayerIntercepted = function() {
 	LP.Player.call(this);
+	//this.type = ['sender', 'receiver'];
+	this.type = ['receiver'];
 } 
 //subclass extends superclass
 LP.PlayerIntercepted.prototype = Object.create(LP.Player.prototype);
@@ -771,8 +865,8 @@ LP.PlayerIntercepted.prototype.constructor = LP.Player;
 LP.PlayerIntercepted.init = function() {
 	trace('Player with interceptor'); 
 	var player = new LP.PlayerIntercepted();
-	LP.Interceptor.init(player);	
 	player.boot();
+	LP.Interceptor.init(player);	
 	return player ;
 }
 
@@ -810,10 +904,8 @@ LP.Tracker.prototype = {
 			switch(message.func) {
 			case 'init_connection':
 				var peer = tracker.createPeer();
-
 				peer.on('createoffer', function(desc) {
 					peer.setLocalDescription( desc );
-
 					socket.send('tracker_sdp', peer.token, {sdp: peer.description});
 				});
 
@@ -824,8 +916,7 @@ LP.Tracker.prototype = {
 				if (LP.Peer.prototype.isPrototypeOf(peer)) {
 					peer.setRemoteDescription(message.sdp);
 				} 
-				break;
-			
+				break;			
 			case 'icecandidates':
 				var peer = tracker.nodes[message.token];
 				if (LP.Peer.prototype.isPrototypeOf(peer)) { 
@@ -849,16 +940,29 @@ LP.Tracker.prototype = {
 	},
 
 	createPeer: function() {
+		var tracker = this;
 		var newPeer = LP.Peer.init(null, dfServers, null);
 
 		newPeer.createDataChannel();
-		newPeer.createStreamDestination();
 
 		newPeer.on('open', function() {
-			newPeer.send('tracker message');
+			newPeer.send('whoareyou');
 		});
 		newPeer.on('message', function(message) {
-			console.log(message);
+			message = JSON.parse(message);
+			switch(message.func) {
+			case 'iam':
+				newPeer.types = message.types;
+				break;
+			case 'need_offer':
+				for (var key in tracker.nodes) 
+				{
+					var node = tracker.nodes[key];
+					if (node.types.indexOf('sender') > -1) {
+						newPeer.send('check_offer', { token: node.token });
+					}
+				}
+			}
 		});
 
 		

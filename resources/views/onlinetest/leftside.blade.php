@@ -38,7 +38,7 @@
 	        <div class="pull-right form-inline">
 	          <div class="checkbox">
 			    <label>
-			      <input type="checkbox" id="with_peer"> With P2P
+			      <input type="checkbox" id="with_peer" checked="checked" autocomplete="off"> With P2P
 			    </label>
 			  </div>
 	          <a id ="initBroadcast" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
