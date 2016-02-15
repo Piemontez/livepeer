@@ -15,6 +15,7 @@ var LP = this.LP = function() {};
 
 LP.audioContext = new AudioContext();
 LP.isTrace = true;
+LP.blockSize = 31; // (base 10) = 11111 
 
 var socketConstraint = {
 	'securite'	: 'ws',
@@ -346,7 +347,8 @@ LP.Broadcast = function() {
 	this.type = ['sender'];
 	this.obs = [];
 	this.running = true;
-	this.socket			= null;
+	this.streamPos = 0;
+	this.socket				= null;
 	this.localMediaStream	= null;
 	this.mediaStreamSource	= null;// InputReader
 	this.nodes = [];
@@ -364,13 +366,12 @@ LP.Broadcast.prototype = {
 
 		var broadcast = this;
 
+		broadcast.getUserMedia();
+
 		broadcast.obs['newpeer']	= new Observer();
 		
-		// broadcast.createScriptProcessor();
-
 		var socket = broadcast.socket = LP.Socket.init();
 		socket.on('open', function() {
-			broadcast.getUserMedia();
 		});
 		socket.on('message', function(message) {
 			message = JSON.parse(message);
@@ -468,6 +469,8 @@ LP.Broadcast.prototype = {
 		
 		var broadcast = this;
 		processor.onaudioprocess = function(audioProcessingEvent) {
+			audioProcessingEvent.inputBuffer.streamPos = broadcast.streamPos++;
+
 			broadcast.receiveSuccessCallback(
 					audioProcessingEvent.inputBuffer,
 					audioProcessingEvent.outputBuffer)
@@ -654,6 +657,8 @@ LP.Interceptor = function() {
 	//this.socket	= null;
 	this.intercepted = null;
 	this.nodes = [];
+	this.sender = []; //matrix
+	this.receiving = 0;
 }
 
 //static function
@@ -771,20 +776,54 @@ LP.Interceptor.prototype = {
 			};
 		});
 		
-		obj.receiveSuccessCallback = this.receiveSuccessCallback; 
+		obj.receiveSuccessCallback = function (i, o) {
+			interceptor.receiveSuccessCallback(i, o); 
+		}
 		obj.sendSuccessCallback = this.sendSuccessCallback; 
 	},
 
 	createPeer: function() {
+		var interceptor = this;
 		var newPeer = LP.Peer.init();
-		
+		//TODO: Verificar necessidade de criar um datachannel de cada lado do peer.
 		newPeer.createDataChannel();
 
 		newPeer.on('open', function() {
-
+			newPeer.send('whoareyou');
 		});
 		newPeer.on('message', function(message) {
+			message = JSON.parse(message);
+			switch(message.func) {
+			case 'stream':
 
+				break;
+			case 'have_this_offer':
+				newPeer.blocks = message.blocks;
+				break;
+			case 'need_offer_for':
+				//Verifica se possuí os streams solicitados
+				var blocks = LP.blockSize;
+				//Se sim, informa o outro lado e inicia a transmissão
+				newPeer.send('have_this_offer', {blocks: blocks});
+
+				interceptor.addSender(blocks, newPeer);
+				break;
+			case 'iam':
+				//TODO:RECEBENDO DUAS VEZES ESTA MENSAGEM
+				newPeer.types = message.types;
+				//Verifica este nó é um receptor de stream e se o outro peer é um doador
+				if (interceptor.intercepted.type.indexOf('receiver') > -1
+						&& newPeer.types.indexOf('sender') > -1) {
+					newPeer.send('need_offer_for', {blocks: interceptor ^ LP.blockSize});
+				}
+				/*
+				if (message.answer === undefined)
+					newPeer.send('iam', { answer: 'answer', types: interceptor.intercepted.type});*/
+				break;
+			case 'whoareyou':
+				newPeer.send('iam', {types: interceptor.intercepted.type});
+				break;
+			}
 		});
 
 		
@@ -792,6 +831,20 @@ LP.Interceptor.prototype = {
 		this.nodes[ newPeer.generateToken() ] = newPeer;
 		//this.obs['newpeer'].fire(newPeer);
 		return newPeer;
+	},
+	
+	addSender: function(pos, peer) {
+		var realPos = 0;
+		for(var shiftPos = 1; shiftPos < LP.blockSize; shiftPos *= 2)
+		{
+			if (shiftPos & pos) {
+				if (this.sender[realPos] === undefined) {
+					this.sender[realPos] = [];
+				}
+				this.sender[realPos].push(peer);
+			}
+			realPos++;
+		}
 	},
 	
 	createTrackerPeer: function()  {
@@ -815,6 +868,7 @@ LP.Interceptor.prototype = {
 			case 'check_offer':
 				//TODO: trocar comunicação do webservice para com o tracker.
 				var peer = interceptor.createPeer();
+
 				interceptor.intercepted.socket.send('need_sender', peer.token, { to: message.token });
 			}
 		});
@@ -822,7 +876,22 @@ LP.Interceptor.prototype = {
 	},
 	
 	receiveSuccessCallback: function(inputBuffer, outputBuffer) {
-		console.log(1);
+		//console.log(inputBuffer.streamPos);
+		for (var blockPos in this.sender) 
+		{
+			var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
+			if (blockPos = streamBlockPos) { 
+				var peers = this.sender[blockPos];
+				for (var key in peers)
+				{
+					var node = peers[key];
+					for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
+						var inputData = inputBuffer.getChannelData(channel);
+						node.send('stream', {data:inputData});
+					}
+				}
+			}
+		}
 	},
 	
 	sendSuccessCallback: function(inputBuffer, outputBuffer) {
