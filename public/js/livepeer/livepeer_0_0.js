@@ -16,6 +16,7 @@ var LP = this.LP = function() {};
 LP.audioContext = new AudioContext();
 LP.isTrace = true;
 LP.blockSize = 31; // (base 10) = 11111 
+LP.streamSize = 1024;
 
 var socketConstraint = {
 	'securite'	: 'ws',
@@ -54,11 +55,9 @@ var mediaConstraints = {
 function error(err) {
 	console.error(err);
 }
-function trace(obj, msg) {
+function trace(obj) {
 	if (LP.isTrace) {
-		if (msg === undefined) {
-			console.log(obj);
-		}
+		console.log(obj.substring(0, 120));
 	}
 }
 /*
@@ -218,7 +217,7 @@ LP.Peer.init = function(token, servers, constraints) {
 	peer.connection.onaddstream = function(event) {
 		trace('On Add Stream');
 
-		peer.setMediaStream(event.stream);
+//		peer.setMediaStream(event.stream);
 		peer.obs['addstream'].fire(event);
 	};
 	
@@ -462,7 +461,7 @@ LP.Broadcast.prototype = {
 	},
 
 	createScriptProcessor: function() {
-		var processor = LP.audioContext.createScriptProcessor(4096, 1, 1);
+		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
 		processor.connect(LP.audioContext.createMediaStreamDestination());
 		
 		this.mediaStreamSource.connect(processor);
@@ -489,7 +488,7 @@ LP.Broadcast.prototype = {
 
 			var source = LP.audioContext.createBufferSource();
 			source.buffer = outputBuffer; // = LP.audioContext.createBuffer(1,
-											// 4096, broadcast.sampleRate());
+											// LP.streamSize, broadcast.sampleRate());
 			source.connect( node.streamDestination );
 				
 			for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
@@ -532,7 +531,7 @@ LP.Player.prototype = {
 
 		var player = this;
 
-		//player.createStreamDestination();
+		player.createStreamDestination();
 
 		player.obs['newpeer']	= new Observer();
 	 
@@ -609,7 +608,7 @@ LP.Player.prototype = {
 		//audio2.srcObject = this.node.mediaStream;
 
 		//this.node.mediaStreamSource.connect(this.streamDestination);
-		var processor = LP.audioContext.createScriptProcessor(4096, 1, 1);
+		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
 		this.node.mediaStreamSource.connect(processor);
 		//processor.connect(LP.audioContext.destination);
 		//processor.connect(this.streamDestination);
@@ -659,6 +658,8 @@ LP.Interceptor = function() {
 	this.nodes = [];
 	this.sender = []; //matrix
 	this.receiving = 0;
+	this.buffer = new Array();
+	this.lastStreamLoad = 0;
 }
 
 //static function
@@ -778,8 +779,33 @@ LP.Interceptor.prototype = {
 		
 		obj.receiveSuccessCallback = function (i, o) {
 			interceptor.receiveSuccessCallback(i, o); 
+		};
+		obj.sendSuccessCallback = function (i, o) {
+			interceptor.sendSuccessCallback(i, o); 
+		};
+		//obj.sendSuccessCallback = this.sendSuccessCallback;
+		
+		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
+		//processor.connect(LP.audioContext.createMediaStreamDestination());
+		processor.connect(LP.audioContext.destination);
+		//console.dir(LP.audioContext.destination);
+		//var audio2 = document.querySelector('audio#audio2');
+
+
+		var source = LP.audioContext.createBufferSource();
+		source.loop = true;
+		source.loopStart = 0;
+		source.loopEnd = 10000000;
+		source.buffer = LP.audioContext.createBuffer(1, LP.streamSize, LP.audioContext.sampleRate);
+		source.connect(processor);
+		source.start();
+
+		processor.onaudioprocess = function(audioProcessingEvent) {
+			interceptor.sendSuccessCallback(
+				audioProcessingEvent.inputBuffer,
+				audioProcessingEvent.outputBuffer);
 		}
-		obj.sendSuccessCallback = this.sendSuccessCallback; 
+
 	},
 
 	createPeer: function() {
@@ -795,12 +821,13 @@ LP.Interceptor.prototype = {
 			message = JSON.parse(message);
 			switch(message.func) {
 			case 'stream':
-
+				interceptor.buffer.push(message);
 				break;
 			case 'have_this_offer':
 				newPeer.blocks = message.blocks;
 				break;
 			case 'need_offer_for':
+				//Todo: Verificar porque Receiver solicita duas vezes uma offer.
 				//Verifica se possuí os streams solicitados
 				var blocks = LP.blockSize;
 				//Se sim, informa o outro lado e inicia a transmissão
@@ -841,12 +868,14 @@ LP.Interceptor.prototype = {
 				if (this.sender[realPos] === undefined) {
 					this.sender[realPos] = [];
 				}
-				this.sender[realPos].push(peer);
+				if (this.sender[realPos].indexOf(peer) == -1) {
+					this.sender[realPos].push(peer);
+				}
 			}
 			realPos++;
 		}
 	},
-	
+
 	createTrackerPeer: function()  {
 
 		var interceptor = this;
@@ -876,18 +905,27 @@ LP.Interceptor.prototype = {
 	},
 	
 	receiveSuccessCallback: function(inputBuffer, outputBuffer) {
-		//console.log(inputBuffer.streamPos);
+		var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
 		for (var blockPos in this.sender) 
 		{
-			var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
-			if (blockPos = streamBlockPos) { 
+			if (blockPos == streamBlockPos) {
 				var peers = this.sender[blockPos];
 				for (var key in peers)
 				{
+					console.log(key);
 					var node = peers[key];
 					for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
 						var inputData = inputBuffer.getChannelData(channel);
-						node.send('stream', {data:inputData});
+						
+						//Gerar dados aleatorios
+						for (key in inputData) {
+					      	inputData[key] = Math.random() * 2;
+						}
+						
+						node.send('stream', {
+							streamPos: inputBuffer.streamPos,
+							data: inputData
+						});
 					}
 				}
 			}
@@ -895,7 +933,40 @@ LP.Interceptor.prototype = {
 	},
 	
 	sendSuccessCallback: function(inputBuffer, outputBuffer) {
-		console.log(2);
+		var lastTest = 0;
+		var buffer = null;
+		for (key in this.buffer) {
+			var input = this.buffer[key];
+			
+			if (this.lastStreamLoad == 0) {
+				this.lastStreamLoad = input.streamPos - 30; //Aproximadamente 3 segundos
+				break;
+			}
+			if (this.lastStreamLoad == input.streamPos) {
+				buffer = input.data;
+			}
+			lastTest = input.streamPos;
+		}
+
+		if (buffer != null) {
+			//var source = LP.audioContext.createBufferSource();
+			//source.buffer = outputBuffer;
+			//source.connect( LP.audioContext.destination );
+			for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+				var outputData = outputBuffer.getChannelData(channel);
+			
+				for (var pos = 0; pos < outputData.length; pos++) {
+					//outputData[pos] = 0;
+			      	//outputData[pos] = Math.random();
+			      	outputData[pos] = buffer[pos];
+					
+				}
+			}
+			//source.start();
+			console.log(this.lastStreamLoad);
+			console.log(lastTest);
+		}
+		this.lastStreamLoad++;
 	},
 }
 
