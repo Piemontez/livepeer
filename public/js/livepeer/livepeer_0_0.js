@@ -38,6 +38,7 @@ var dfPeerConstraints = null; off = {
 };
 
 var dfDataChannelOptions = {
+	reliable: false,
 	ordered: false, // do not guarantee order
 	maxRetransmitTime: 1000, // in milliseconds
 }
@@ -210,6 +211,9 @@ LP.Peer.init = function(token, servers, constraints) {
 	peer.connection.ondatachannel = function(event) {
 		peer.createDataChannel(null, event.channel);
 	};
+	peer.connection.oniceconnectionstatechange = function(event) {
+		trace('ICE connection state change:' + event.target.iceConnectionState)
+	};
 	peer.connection.onicecandidate = function(event) {
 		trace('On Ice Candidate');
 		peer.obs['icecandidate'].fire(event);
@@ -280,6 +284,17 @@ LP.Peer.prototype = {
 		peer.dataChannel.onclose = function () {
 			trace("The Data Channel is Closed");
 		};
+	},
+	
+	readyState: function() {
+		if (this.dataChannel !== null) {
+			return this.dataChannel.readyState;
+		}
+		return undefined;
+	},
+	
+	isOpen: function() {
+		return this.readyState() == "open"
 	},
 	
 	send: function(func, obj) {
@@ -468,6 +483,7 @@ LP.Broadcast.prototype = {
 		
 		var broadcast = this;
 		processor.onaudioprocess = function(audioProcessingEvent) {
+			//console.log("............................")
 			audioProcessingEvent.inputBuffer.streamPos = broadcast.streamPos++;
 
 			broadcast.receiveSuccessCallback(
@@ -608,8 +624,9 @@ LP.Player.prototype = {
 		//audio2.srcObject = this.node.mediaStream;
 
 		//this.node.mediaStreamSource.connect(this.streamDestination);
-		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
+		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1); 
 		this.node.mediaStreamSource.connect(processor);
+
 		//processor.connect(LP.audioContext.destination);
 		//processor.connect(this.streamDestination);
 		
@@ -657,7 +674,7 @@ LP.Interceptor = function() {
 	this.intercepted = null;
 	this.nodes = [];
 	this.sender = []; //matrix
-	this.receiving = 0;
+	this.receiving = 0; //max = 31 = x11111
 	this.buffer = new Array();
 	this.lastStreamLoad = 0;
 }
@@ -682,6 +699,7 @@ LP.Interceptor.prototype = {
 		interceptor.intercepted = obj;
 
 		interceptor.createTrackerPeer();
+		interceptor.createManager();
 		
 		obj.socket.offAll('open');
 		obj.socket.offAll('message');
@@ -715,7 +733,7 @@ LP.Interceptor.prototype = {
 				break;
 			case 'need_sender':
 				if (interceptor.tracker.token == message.to)  {
-					var peer = interceptor.createPeer();
+					var peer = interceptor.createPeer(true);
 					peer.on('createoffer', function(desc) {
 						peer.setLocalDescription( desc );
 						obj.socket.send('sender_sdp', peer.token, { to: message.token, sdp: peer.description});
@@ -808,44 +826,31 @@ LP.Interceptor.prototype = {
 
 	},
 
-	createPeer: function() {
+	createPeer: function(answer) {
 		var interceptor = this;
 		var newPeer = LP.Peer.init();
 		//TODO: Verificar necessidade de criar um datachannel de cada lado do peer.
-		newPeer.createDataChannel();
+		if (answer) {
+			newPeer.createDataChannel();
+		}
 
-		newPeer.on('open', function() {
-			newPeer.send('whoareyou');
-		});
 		newPeer.on('message', function(message) {
 			message = JSON.parse(message);
 			switch(message.func) {
 			case 'stream':
 				interceptor.buffer.push(message);
 				break;
+			case 'give_to_me_offer':
+				interceptor.addSender(message.blocks, newPeer);
+				break;
 			case 'have_this_offer':
 				newPeer.blocks = message.blocks;
 				break;
 			case 'need_offer_for':
-				//Todo: Verificar porque Receiver solicita duas vezes uma offer.
-				//Verifica se possuí os streams solicitados
-				var blocks = LP.blockSize;
-				//Se sim, informa o outro lado e inicia a transmissão
-				newPeer.send('have_this_offer', {blocks: blocks});
-
-				interceptor.addSender(blocks, newPeer);
+				newPeer.send('have_this_offer', {blocks: interceptor.haveThisBlocks(message.blocks)});
 				break;
 			case 'iam':
-				//TODO:RECEBENDO DUAS VEZES ESTA MENSAGEM
 				newPeer.types = message.types;
-				//Verifica este nó é um receptor de stream e se o outro peer é um doador
-				if (interceptor.intercepted.type.indexOf('receiver') > -1
-						&& newPeer.types.indexOf('sender') > -1) {
-					newPeer.send('need_offer_for', {blocks: interceptor ^ LP.blockSize});
-				}
-				/*
-				if (message.answer === undefined)
-					newPeer.send('iam', { answer: 'answer', types: interceptor.intercepted.type});*/
 				break;
 			case 'whoareyou':
 				newPeer.send('iam', {types: interceptor.intercepted.type});
@@ -853,12 +858,117 @@ LP.Interceptor.prototype = {
 			}
 		});
 
-		
+		newPeer.on('open', function() {
+			
+		});
+
 		//newPeer.createStreamDestination();
 		this.nodes[ newPeer.generateToken() ] = newPeer;
 		//this.obs['newpeer'].fire(newPeer);
 		return newPeer;
 	},
+
+	createManager: function() {
+		var interceptor = this;
+		setTimeout(function(){ interceptor.run(); }, 3000);
+	},
+
+	run: function() {
+		for (var key in this.nodes) 
+		{
+			try {
+				var node = this.nodes[key];
+				if (node == null || !node.isOpen()) {
+					//TODO:Verificar por e remover da lista se necessário
+					continue;
+				}
+				//Identificar o tipo de nõ na outra ponte
+				if (node.types === undefined) {
+					node.send('whoareyou');
+					continue;
+				}
+				//Coletar quais blocos a outra ponta possui
+				if (node.blocks === undefined) {
+					//Verifica se este nó é um receptor de stream e se o outro peer é um doador
+					if (this.intercepted.type.indexOf('receiver') > -1
+							&& node.types.indexOf('sender') > -1) {
+						node.send('need_offer_for', {blocks: this.needThisBlocks()});
+					}
+					continue;
+				}
+				//Coletar quais blocos a outra ponta possui
+				if (node.getting === undefined) {
+					node.getting = true;
+					node.send('give_to_me_offer', {blocks: this.sendToMeThisBlocks(node)});
+				}
+			} catch(err) {
+				error(err.message);
+			}
+		}
+		var interceptor = this;
+		setTimeout(function(){ interceptor.run(); }, 1000);
+	},
+	
+	//determina qual bloco cada sender deve enviar
+	managerBlock: function() {
+		var blocks = 0;
+		var receivers = [];
+		//Identifica os blocos novos e que conseguem enviar.
+		for (var key in this.nodes) {
+			var sender = this.nodes[key];
+			if (sender.blocks !== undefined && sender.blockSender === undefined) {
+				receivers.push(sender);
+				sender.blockSender = 0;
+				blocks =  blocks | (this.needThisBlocks() & sender.blocks);
+			}
+		}
+		//determina qual bloco cada sender deve enviar		
+		var last = 0;
+		for(var shiftPos = 1; shiftPos < LP.blockSize; shiftPos *= 2)
+		{
+			if (shiftPos & blocks) {
+				var sender = receivers[last];
+				if (shiftPos & sender.blocks) {
+					this.receiving = this.receiving | shiftPos;
+					sender.blockSender = sender.blockSender | shiftPos;
+					last++;
+					if (last >= receivers.length) {
+						last = 0
+					}
+				}
+			}
+		}
+	},
+	
+	/*
+	 * Receiver informa quais blocos nescessita receber
+	 */
+	needThisBlocks: function() {
+		//Ex: 111111 & ~(111001) = 111111 & 111...000110 = 000110  
+		return LP.blockSize & (~this.receiving)
+	},
+	
+	/*
+	 * Sender, verifica se possui os stream solicitados
+	 */
+	haveThisBlocks: function(blocks) {
+		var peer = this;
+		return this.receiving & blocks;
+	},
+	
+	/*
+	 * Receive, informa quais blocos devem ser encaminhados
+	 */
+	sendToMeThisBlocks: function(node) {
+		//Verifica se já é responsável por algum bloco
+		if (node.blockSender !== undefined) {
+			return node.blockSender;
+		}
+		this.managerBlock();
+		
+		return node.blockSender;
+	},
+
 	
 	addSender: function(pos, peer) {
 		var realPos = 0;
@@ -870,14 +980,20 @@ LP.Interceptor.prototype = {
 				}
 				if (this.sender[realPos].indexOf(peer) == -1) {
 					this.sender[realPos].push(peer);
+					
+					//TODO:REMOVER QUANDO SISTEMA ESTIVER ESTAVEL
+					var func = function() {
+						peer.send('teste', {token: peer.token, teste: "Teste de conexão"});
+						setTimeout(func, 5000);
+					};
+					setTimeout(func, 5000);
 				}
 			}
 			realPos++;
 		}
 	},
-
+	
 	createTrackerPeer: function()  {
-
 		var interceptor = this;
 
 		var tracker = this.tracker = LP.Peer.init(null, dfServers, null);
@@ -894,11 +1010,16 @@ LP.Interceptor.prototype = {
 					tracker.send('need_offer');
 				}
 				break;
-			case 'check_offer':
+			case 'check_offers':
 				//TODO: trocar comunicação do webservice para com o tracker.
-				var peer = interceptor.createPeer();
-
-				interceptor.intercepted.socket.send('need_sender', peer.token, { to: message.token });
+				for(key in message.tokens) 
+				{
+					var token = message.tokens[key];
+					if (token !== tracker.token) {//Não iniciar comunicação comigo mesmo.
+						var peer = interceptor.createPeer(false);
+						interceptor.intercepted.socket.send('need_sender', peer.token, { to: token });
+					}
+				}
 			}
 		});
 
@@ -912,7 +1033,6 @@ LP.Interceptor.prototype = {
 				var peers = this.sender[blockPos];
 				for (var key in peers)
 				{
-					console.log(key);
 					var node = peers[key];
 					for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
 						var inputData = inputBuffer.getChannelData(channel);
@@ -921,7 +1041,6 @@ LP.Interceptor.prototype = {
 						for (key in inputData) {
 					      	inputData[key] = Math.random() * 2;
 						}
-						
 						node.send('stream', {
 							streamPos: inputBuffer.streamPos,
 							data: inputData
@@ -959,7 +1078,6 @@ LP.Interceptor.prototype = {
 					//outputData[pos] = 0;
 			      	//outputData[pos] = Math.random();
 			      	outputData[pos] = buffer[pos];
-					
 				}
 			}
 			//source.start();
@@ -987,15 +1105,16 @@ LP.BroadcastIntercepted.init = function() {
 	trace('Broadcat with interceptor');
 	var broadcast = new LP.BroadcastIntercepted();
 	broadcast.boot();
-	LP.Interceptor.init(broadcast);	
+	var interceptor = LP.Interceptor.init(broadcast);
+	interceptor.receiving = LP.blockSize;
 	return broadcast;
 }
 
 //constructor class
 LP.PlayerIntercepted = function() {
 	LP.Player.call(this);
-	//this.type = ['sender', 'receiver'];
-	this.type = ['receiver'];
+	this.type = ['sender', 'receiver'];
+	//this.type = ['receiver'];
 } 
 //subclass extends superclass
 LP.PlayerIntercepted.prototype = Object.create(LP.Player.prototype);
@@ -1095,13 +1214,15 @@ LP.Tracker.prototype = {
 				newPeer.types = message.types;
 				break;
 			case 'need_offer':
+				var tokens = []
 				for (var key in tracker.nodes) 
 				{
 					var node = tracker.nodes[key];
 					if (node.types.indexOf('sender') > -1) {
-						newPeer.send('check_offer', { token: node.token });
+						tokens.push(node.token);
 					}
 				}
+				newPeer.send('check_offers', { tokens: tokens });
 			}
 		});
 
