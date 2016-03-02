@@ -796,12 +796,11 @@ LP.Interceptor.prototype = {
 		});
 		
 		obj.receiveSuccessCallback = function (i, o) {
-			interceptor.receiveSuccessCallback(i, o); 
+			interceptor.receiveSuccessCallback(i, o);
 		};
 		obj.sendSuccessCallback = function (i, o) {
 			interceptor.sendSuccessCallback(i, o); 
 		};
-		//obj.sendSuccessCallback = this.sendSuccessCallback;
 		
 		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
 		//processor.connect(LP.audioContext.createMediaStreamDestination());
@@ -839,6 +838,7 @@ LP.Interceptor.prototype = {
 			switch(message.func) {
 			case 'stream':
 				interceptor.buffer.push(message);
+				interceptor.receiveSuccessCallback(message, null);
 				break;
 			case 'give_to_me_offer':
 				interceptor.addSender(message.blocks, newPeer);
@@ -970,11 +970,12 @@ LP.Interceptor.prototype = {
 	},
 
 	
-	addSender: function(pos, peer) {
+	addSender: function(blocks, peer) {
+		peer.sendBlocks = blocks;
 		var realPos = 0;
 		for(var shiftPos = 1; shiftPos < LP.blockSize; shiftPos *= 2)
 		{
-			if (shiftPos & pos) {
+			if (shiftPos & blocks) {
 				if (this.sender[realPos] === undefined) {
 					this.sender[realPos] = [];
 				}
@@ -1026,6 +1027,16 @@ LP.Interceptor.prototype = {
 	},
 	
 	receiveSuccessCallback: function(inputBuffer, outputBuffer) {
+		var inputData = null;
+
+		if (outputBuffer == null
+				&& inputBuffer.data !== undefined) {
+			inputData = inputBuffer.data;
+		}
+		for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
+			inputData = inputBuffer.getChannelData(channel);
+		}
+		
 		var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
 		for (var blockPos in this.sender) 
 		{
@@ -1034,29 +1045,21 @@ LP.Interceptor.prototype = {
 				for (var key in peers)
 				{
 					var node = peers[key];
-					for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
-						var inputData = inputBuffer.getChannelData(channel);
-						
-						//Gerar dados aleatorios
-						for (key in inputData) {
-					      	inputData[key] = Math.random() * 2;
-						}
-						node.send('stream', {
-							streamPos: inputBuffer.streamPos,
-							data: inputData
-						});
-					}
+					node.send('stream', {
+						streamPos: inputBuffer.streamPos,
+						data: inputData
+					});
 				}
 			}
 		}
 	},
-	
+
 	sendSuccessCallback: function(inputBuffer, outputBuffer) {
-		var lastTest = 0;
+
 		var buffer = null;
+		//TODO:Criar método get buffer
 		for (key in this.buffer) {
 			var input = this.buffer[key];
-			
 			if (this.lastStreamLoad == 0) {
 				this.lastStreamLoad = input.streamPos - 30; //Aproximadamente 3 segundos
 				break;
@@ -1064,7 +1067,6 @@ LP.Interceptor.prototype = {
 			if (this.lastStreamLoad == input.streamPos) {
 				buffer = input.data;
 			}
-			lastTest = input.streamPos;
 		}
 
 		if (buffer != null) {
@@ -1081,8 +1083,6 @@ LP.Interceptor.prototype = {
 				}
 			}
 			//source.start();
-			console.log(this.lastStreamLoad);
-			console.log(lastTest);
 		}
 		this.lastStreamLoad++;
 	},
