@@ -1035,6 +1035,11 @@ LP.Interceptor.prototype = {
 		}
 		for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
 			inputData = inputBuffer.getChannelData(channel);
+			
+			//Criar som chiado
+			for (var pos = 0; pos < inputData.length; pos++) {
+				inputData[pos] = Math.random();
+			}
 		}
 		
 		var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
@@ -1055,7 +1060,6 @@ LP.Interceptor.prototype = {
 	},
 
 	sendSuccessCallback: function(inputBuffer, outputBuffer) {
-
 		var buffer = null;
 		//TODO:Criar método get buffer
 		for (key in this.buffer) {
@@ -1070,19 +1074,21 @@ LP.Interceptor.prototype = {
 		}
 
 		if (buffer != null) {
-			//var source = LP.audioContext.createBufferSource();
-			//source.buffer = outputBuffer;
-			//source.connect( LP.audioContext.destination );
+			var outputData = null;
 			for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
 				var outputData = outputBuffer.getChannelData(channel);
 			
 				for (var pos = 0; pos < outputData.length; pos++) {
-					//outputData[pos] = 0;
-			      	//outputData[pos] = Math.random();
 			      	outputData[pos] = buffer[pos];
 				}
 			}
-			//source.start();
+			//Enviar para speaker
+			if (outputData != null) {
+				var source = LP.audioContext.createBufferSource();
+				source.buffer = outputBuffer;
+				source.connect( LP.audioContext.destination );
+				source.start();				
+			}
 		}
 		this.lastStreamLoad++;
 	},
