@@ -15,7 +15,8 @@ var LP = this.LP = function() {};
 
 LP.audioContext = new AudioContext();
 LP.isTrace = true;
-LP.blockSize = 31; // (base 10) = 11111 
+LP.blockCount = 5; // 5 = [1,1,1,1,1]
+LP.blockSize = 31; // (base 2) = 11111 
 LP.streamSize = 1024;
 
 var socketConstraint = {
@@ -124,6 +125,8 @@ LP.Socket.init = function() {
     websocket.onmessage = function(evt) {
     	trace('Socket Message Receive ' + evt.data);
     	socket.obs['message'].fire(evt.data);
+		//if (auto)
+    	socket.autoConnect(evt.data);
     };
     
     websocket.onerror = function(evt) {
@@ -141,6 +144,69 @@ LP.Socket.prototype = {
 
 	offAll: function(ev) {
 		this.obs[ev] = new Observer();
+	},
+	
+	findPeer: function(peer) {
+		throw "override getPeer function required";
+	},
+	
+	autoConnect: function(message) {
+		message = JSON.parse(message);
+		switch(message.func) {
+		/*case 'init_connection':
+			var peer = this.findPeer(message.to);
+			if (LP.Peer.prototype.isPrototypeOf(peer)) {
+				var newPeer = interceptor.createPeer(true);
+				newPeer.on('createoffer', function(desc) {
+					newPeer.setLocalDescription( desc );
+					this.send('sender_sdp', newPeer.token, { to: message.token, sdp: newPeer.description});
+				});
+				newPeer.createOffer();
+			}
+			break;*/
+		case 'sender_sdp':
+			var peer = this.findPeer(message.to);
+			if (LP.Peer.prototype.isPrototypeOf(peer)) {
+				var socket = this;
+				peer.on('setremotedescription', function() {
+					peer.createAnswer();
+				});
+				peer.on('createanswer', function(desc) {
+					peer.setLocalDescription(desc);
+					socket.send('answer', peer.token, { to: message.token, sdp: peer.description });
+					setTimeout(function() {// TODO adicionar de forma progressiva também
+						socket.send('need_icecandidates', peer.token, { to: message.token });
+					}, 800);
+				});
+				peer.setRemoteDescription(message.sdp);
+			}
+			break;
+		case 'answer':
+			var peer = this.findPeer(message.to);
+			if (LP.Peer.prototype.isPrototypeOf(peer)) {
+				peer.setRemoteDescription(message.sdp);
+			} 
+			break;
+		case 'need_icecandidates':
+			var peer = this.findPeer(message.to);
+			if (LP.Peer.prototype.isPrototypeOf(peer)) {
+				this.send('icecandidates', peer.token, { to: message.token, ices: peer.candidates });
+				if (message.answer === undefined) {
+					this.send('need_icecandidates', peer.token, { to: message.token, ices: peer.candidates, answer: true });
+				}
+			} 
+		 	break
+		case 'icecandidates':
+			var peer = this.findPeer(message.to);
+			if (LP.Peer.prototype.isPrototypeOf(peer)) { 
+				if (Array.isArray(message.ices)) { 
+					message.ices.forEach(function(ice) {
+						peer.addRemoteIceCandidate(ice); }
+					); 
+				} 
+			} 
+		 	break;;
+		}
 	},
 
 	stop: function() {
@@ -365,6 +431,7 @@ LP.Broadcast = function() {
 	this.socket				= null;
 	this.localMediaStream	= null;
 	this.mediaStreamSource	= null;// InputReader
+	this.mediaScriptProcessor = null;
 	this.nodes = [];
 }
 
@@ -476,14 +543,13 @@ LP.Broadcast.prototype = {
 	},
 
 	createScriptProcessor: function() {
-		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
-		processor.connect(LP.audioContext.createMediaStreamDestination());
+		this.mediaScriptProcessos = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
+		this.mediaScriptProcessos.connect(LP.audioContext.createMediaStreamDestination());
 		
-		this.mediaStreamSource.connect(processor);
+		this.mediaStreamSource.connect(this.mediaScriptProcessos);
 		
 		var broadcast = this;
-		processor.onaudioprocess = function(audioProcessingEvent) {
-			//console.log("............................")
+		this.mediaScriptProcessos.onaudioprocess = function(audioProcessingEvent) {
 			audioProcessingEvent.inputBuffer.streamPos = broadcast.streamPos++;
 
 			broadcast.receiveSuccessCallback(
@@ -704,93 +770,31 @@ LP.Interceptor.prototype = {
 		obj.socket.offAll('open');
 		obj.socket.offAll('message');
 		
+		obj.socket.findPeer = function(token) {
+			var peer = interceptor.nodes[token];
+			if (peer != undefined)
+				return interceptor.nodes[token];
+			else if (interceptor.tracker.token == token)
+				return interceptor.tracker;
+				
+		};
 		obj.socket.on('open', function(e) {
-			obj.socket.send('init_connection', interceptor.tracker.token);
+			obj.socket.send('tracker_connection', interceptor.tracker.token);
 		});
 		
 		obj.socket.on('message', function(message) {
 			message = JSON.parse(message);
 			switch(message.func) {
-			case 'tracker_sdp':
-				//TODO criar chave de envio, para não conflitar quando receber duas mensagens no mesmo instante.
-				if (interceptor.tracker.token === null) {
-					interceptor.tracker.token = message.token;
-					//interceptor.tracker.obs['tracker'].fire(interceptor.tracker);
-					
-					interceptor.tracker.on('setremotedescription', function() {
-						interceptor.tracker.createAnswer();
-					});
-					interceptor.tracker.on('createanswer', function(desc) {
-						interceptor.tracker.setLocalDescription(desc);
-						obj.socket.send('answer', interceptor.tracker.token,{ sdp: interceptor.tracker.description });
-						setTimeout(function() {// TODO adicionar de forma progressiva também
-							obj.socket.send('need_icecandidates', interceptor.tracker.token);
-						}, 800);
-					});
-		
-					interceptor.tracker.setRemoteDescription(message.sdp);
-				}
-				break;
-			case 'need_sender':
-				if (interceptor.tracker.token == message.to)  {
-					var peer = interceptor.createPeer(true);
-					peer.on('createoffer', function(desc) {
-						peer.setLocalDescription( desc );
-						obj.socket.send('sender_sdp', peer.token, { to: message.token, sdp: peer.description});
-					});
-					peer.createOffer();
-				}
-				break;
-			case 'sender_sdp':
-				var peer = interceptor.nodes[message.to];
+			case 'init_connection':
+				var peer = obj.socket.findPeer(message.to);
 				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					peer.on('setremotedescription', function() {
-						peer.createAnswer();
+					var newPeer = interceptor.createPeer(true);
+					newPeer.on('createoffer', function(desc) {
+						newPeer.setLocalDescription( desc );
+						obj.socket.send('sender_sdp', newPeer.token, { to: message.token, sdp: newPeer.description});
 					});
-					peer.on('createanswer', function(desc) {
-						peer.setLocalDescription(desc);
-						obj.socket.send('answer', peer.token, { to: message.token, sdp: peer.description });
-						setTimeout(function() {// TODO adicionar de forma progressiva também
-							obj.socket.send('need_icecandidates', peer.token, { to: message.token });
-						}, 800);
-					});
-					peer.setRemoteDescription(message.sdp);
+					newPeer.createOffer();
 				}
-				break;
-			case 'answer':
-				var peer = interceptor.nodes[message.to];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					peer.setRemoteDescription(message.sdp);
-				}
-				break;
-			case 'need_icecandidates':
-				var peer = interceptor.nodes[message.to];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					obj.socket.send('icecandidates', peer.token, { to: message.token, ices: peer.candidates });
-					//obj.socket.send('need_icecandidates', peer.token, { to: message.token, ices: peer.candidates });
-				}
-				break;
-			case 'icecandidates':
-				if (interceptor.tracker.token == message.token)
-				{
-					if (Array.isArray(message.ices))
-					{
-						message.ices.forEach(function(ice) {
-							interceptor.tracker.addRemoteIceCandidate(ice);
-						});
-						obj.socket.send('icecandidates', interceptor.tracker.token, { ices: interceptor.tracker.candidates });
-					}
-				} else {
-					var peer = interceptor.nodes[message.to];
-					if (LP.Peer.prototype.isPrototypeOf(peer)) { 
-						if (Array.isArray(message.ices)) { 
-							message.ices.forEach(function(ice) {
-								peer.addRemoteIceCandidate(ice); }
-							); 
-						} 
-					}
-				}
-
 				break;
 			};
 		});
@@ -802,22 +806,18 @@ LP.Interceptor.prototype = {
 			interceptor.sendSuccessCallback(i, o); 
 		};
 		
-		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
-		//processor.connect(LP.audioContext.createMediaStreamDestination());
-		processor.connect(LP.audioContext.destination);
-		//console.dir(LP.audioContext.destination);
-		//var audio2 = document.querySelector('audio#audio2');
+		this.sendSP = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1);
+		this.sendSP.connect(LP.audioContext.destination);
 
+		//var source = LP.audioContext.createBufferSource();
+		//source.loop = true;
+		//source.loopStart = 0;
+		//source.loopEnd = 10000000;
+		//source.buffer = LP.audioContext.createBuffer(1, LP.streamSize, LP.audioContext.sampleRate);
+		//source.connect(processor);
+		//source.start();
 
-		var source = LP.audioContext.createBufferSource();
-		source.loop = true;
-		source.loopStart = 0;
-		source.loopEnd = 10000000;
-		source.buffer = LP.audioContext.createBuffer(1, LP.streamSize, LP.audioContext.sampleRate);
-		source.connect(processor);
-		source.start();
-
-		processor.onaudioprocess = function(audioProcessingEvent) {
+		this.sendSP.onaudioprocess = function(audioProcessingEvent) {
 			interceptor.sendSuccessCallback(
 				audioProcessingEvent.inputBuffer,
 				audioProcessingEvent.outputBuffer);
@@ -906,7 +906,7 @@ LP.Interceptor.prototype = {
 			}
 		}
 		var interceptor = this;
-		setTimeout(function(){ interceptor.run(); }, 1000);
+		setTimeout(function(){ interceptor.run(); }, 800);
 	},
 	
 	//determina qual bloco cada sender deve enviar
@@ -952,7 +952,6 @@ LP.Interceptor.prototype = {
 	 * Sender, verifica se possui os stream solicitados
 	 */
 	haveThisBlocks: function(blocks) {
-		var peer = this;
 		return this.receiving & blocks;
 	},
 	
@@ -983,11 +982,11 @@ LP.Interceptor.prototype = {
 					this.sender[realPos].push(peer);
 					
 					//TODO:REMOVER QUANDO SISTEMA ESTIVER ESTAVEL
-					var func = function() {
+					/*var func = function() {
 						peer.send('teste', {token: peer.token, teste: "Teste de conexão"});
 						setTimeout(func, 5000);
 					};
-					setTimeout(func, 5000);
+					setTimeout(func, 5000);*/
 				}
 			}
 			realPos++;
@@ -998,7 +997,8 @@ LP.Interceptor.prototype = {
 		var interceptor = this;
 
 		var tracker = this.tracker = LP.Peer.init(null, dfServers, null);
-		
+
+		tracker.generateToken();
 		tracker.on('open', function() {
 			
 		});
@@ -1006,7 +1006,7 @@ LP.Interceptor.prototype = {
 			message = JSON.parse(message);
 			switch(message.func) {
 			case 'whoareyou':
-				tracker.send('iam', {types: interceptor.intercepted.type});
+				tracker.send('iam', {token: tracker.token, types: interceptor.intercepted.type});
 				if (interceptor.intercepted.type.indexOf('receiver') > -1) {
 					tracker.send('need_offer');
 				}
@@ -1018,7 +1018,7 @@ LP.Interceptor.prototype = {
 					var token = message.tokens[key];
 					if (token !== tracker.token) {//Não iniciar comunicação comigo mesmo.
 						var peer = interceptor.createPeer(false);
-						interceptor.intercepted.socket.send('need_sender', peer.token, { to: token });
+						interceptor.intercepted.socket.send('init_connection', peer.token, { to: token });
 					}
 				}
 			}
@@ -1028,34 +1028,37 @@ LP.Interceptor.prototype = {
 	
 	receiveSuccessCallback: function(inputBuffer, outputBuffer) {
 		var inputData = null;
-
 		if (outputBuffer == null
 				&& inputBuffer.data !== undefined) {
 			inputData = inputBuffer.data;
 		}
-		for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
-			inputData = inputBuffer.getChannelData(channel);
-			
-			//Criar som chiado
-			for (var pos = 0; pos < inputData.length; pos++) {
-				inputData[pos] = Math.random();
-			}
-		}
-		
-		var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
-		for (var blockPos in this.sender) 
-		{
-			if (blockPos == streamBlockPos) {
-				var peers = this.sender[blockPos];
-				for (var key in peers)
-				{
-					var node = peers[key];
-					node.send('stream', {
-						streamPos: inputBuffer.streamPos,
-						data: inputData
-					});
+		try {
+			for (var channel = 0; channel < inputBuffer.numberOfChannels; channel++) {
+				inputData = inputBuffer.getChannelData(channel);
+				
+				//Criar som chiado
+				for (var pos = 0; pos < inputData.length; pos++) {
+					inputData[pos] = Math.random();
 				}
 			}
+			
+			var streamBlockPos = inputBuffer.streamPos % Math.log2(LP.blockSize+1);
+			for (var blockPos in this.sender) 
+			{
+				if (blockPos == streamBlockPos) {
+					var peers = this.sender[blockPos];
+					for (var key in peers)
+					{
+						var node = peers[key];
+						node.send('stream', {
+							streamPos: inputBuffer.streamPos,
+							data: inputData
+						});
+					}
+				}
+			}
+		} catch(ex) {
+			error(ex);
 		}
 	},
 
@@ -1072,7 +1075,6 @@ LP.Interceptor.prototype = {
 				buffer = input.data;
 			}
 		}
-
 		if (buffer != null) {
 			var outputData = null;
 			for (var channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
@@ -1141,6 +1143,8 @@ LP.PlayerIntercepted.init = function() {
 LP.Tracker = function() {
 	this.obs = [];
 	this.nodes = [];
+	this.nodesOrdered = [];
+	this.lastNodeCheck = 0;
 	this.socket	= null;
 }
 
@@ -1161,43 +1165,24 @@ LP.Tracker.prototype = {
 		tracker.obs['newpeer']	= new Observer();
 		
 		var socket = tracker.socket = LP.Socket.init();
+
+		socket.findPeer = function(token) {
+			return tracker.nodes[token];
+		};
 		socket.on('open', function() {
 			//socket.send('register_tracker', socket.id());
 		});
 		socket.on('message', function(message) {
 			message = JSON.parse(message);
 			switch(message.func) {
-			case 'init_connection':
+			case 'tracker_connection':
 				var peer = tracker.createPeer();
 				peer.on('createoffer', function(desc) {
 					peer.setLocalDescription( desc );
-					socket.send('tracker_sdp', peer.token, {sdp: peer.description});
+					socket.send('sender_sdp', peer.token, { to: message.token, sdp: peer.description});
 				});
 
 				peer.createOffer();
-				break;
-			case 'answer':
-				var peer = tracker.nodes[message.token];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					peer.setRemoteDescription(message.sdp);
-				} 
-				break;			
-			case 'icecandidates':
-				var peer = tracker.nodes[message.token];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) { 
-					if (Array.isArray(message.ices)) { 
-						message.ices.forEach(function(ice) {
-							peer.addRemoteIceCandidate(ice); }
-						); 
-					} 
-				} 
-			 	break;
-			case 'need_icecandidates':
-				var peer = tracker.nodes[message.token];
-				if (LP.Peer.prototype.isPrototypeOf(peer)) {
-					socket.send('icecandidates', peer.token, { ices: peer.candidates });
-					socket.send('need_icecandidates', peer.token, { ices: peer.candidates });
-				}
 				break;
 			};
 			return;
@@ -1217,23 +1202,33 @@ LP.Tracker.prototype = {
 			message = JSON.parse(message);
 			switch(message.func) {
 			case 'iam':
+				newPeer.senderToken = message.token; 
 				newPeer.types = message.types;
 				break;
 			case 'need_offer':
-				var tokens = []
-				for (var key in tracker.nodes) 
+				var tokens = [];
+				var lastCheck = tracker.lastNodeCheck;
+				do
 				{
-					var node = tracker.nodes[key];
-					if (node.types.indexOf('sender') > -1) {
-						tokens.push(node.token);
+					lastCheck++;
+					if (lastCheck >= tracker.nodesOrdered.length) {
+						lastCheck = 0;
 					}
-				}
+					var node = tracker.nodesOrdered[lastCheck];
+
+					if (node.types.indexOf('sender') > -1) {
+						tokens.push(node.senderToken);
+					}
+				} while (tokens.length < LP.blockCount && tracker.lastNodeCheck != lastCheck)
+				tracker.lastNodeCheck = lastCheck;
+
 				newPeer.send('check_offers', { tokens: tokens });
 			}
 		});
 
 		
 		this.nodes[ newPeer.generateToken() ] = newPeer;
+		this.nodesOrdered.push(newPeer);
 		this.obs['newpeer'].fire(newPeer);
 		return newPeer;
 	},

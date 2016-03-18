@@ -41,6 +41,7 @@
 			      <input type="checkbox" id="with_peer" checked="checked" autocomplete="off"> With P2P
 			    </label>
 			  </div>
+	          <a id ="initTracker" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
 	          <a id ="initBroadcast" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
             </div>
         </div>
@@ -108,13 +109,18 @@ window.onload = function() {
 	var tracker = null;
 	var broadcast = null;
 
+	document.querySelector('a#initTracker').onclick = function(e) {
+		e.preventDefault();
+		tracker = LP.Tracker.init();
+	}
+	
 	document.querySelector('a#initBroadcast').onclick = function(e) {
 		e.preventDefault();
 
 		if (broadcast === null || !broadcast.isRunning())
 		{
 			if (document.querySelector('input#with_peer').checked) {
-				tracker = LP.Tracker.init();
+				//tracker = LP.Tracker.init();
 				setTimeout(function() {
 					broadcast = LP.BroadcastIntercepted.init();
 				}, 1000);

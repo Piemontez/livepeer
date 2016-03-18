@@ -16,7 +16,9 @@ class LivePeer extends BaseSocketListener {
     }
 
     public function onMessage(ConnectionInterface $from, $msg) {
+    	var_dump($msg);
         foreach ($this->clients as $client) {
+        	
             if ($from != $client) {
                 $client->send($msg);
             }
