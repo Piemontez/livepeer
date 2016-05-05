@@ -8,6 +8,8 @@
  * BEGIN BITRATE & PACKETS DISPLAY 
  */
 
+var lastPeersCount = 0;
+var peersCount = 0;
 var globalLastBytes = 0; 
 var globalLastPackets = 0;
 var globalBytes = -1; 
@@ -23,30 +25,49 @@ function sentDisplay(newPeer) {
 	    var byterateGraph = new TimelineGraphView('bitrateGraphSen', 'bitrateCanvasSen');
 	    byterateGraph.updateEndDate();
 	    
-	    var packetSeries = new TimelineDataSeries();
-	    var packetGraph = new TimelineGraphView('packetsGraphSen', 'packetsCanvasSen');
-	    packetGraph.updateEndDate();
+	    var packetSeries = null;
+	    var packetGraph = null;
+
+	    if (document.querySelector('div#packetsGraphSen') != null) {
+		    packetSeries = new TimelineDataSeries();
+		    packetGraph = new TimelineGraphView('packetsGraphSen', 'packetsCanvasSen');
+		    packetGraph.updateEndDate();
+		}
 
 		setInterval(function() {
 			var now = Date.now();
 
 	        var byterate = (globalBytes - globalLastBytes);
 	        globalLastBytes = globalBytes;
+	        
+	        if (lastPeersCount != peersCount) {
+	        	lastPeersCount = peersCount;
+	        	console.log(".......");
+	        	console.log(peersCount);
+	        	console.log(byterate);
+	        	console.log(globalLastBytes);
+	        	
+			}
+	        
 	        var packrate = (globalPackets - globalLastPackets);
 	        globalLastPackets = globalPackets;
 
-	        document.querySelector('dd#biterate_sen').innerHTML = globalBytes; 
-	        document.querySelector('dd#biterate_sen_sec').innerHTML = byterate; 
-	        document.querySelector('dd#packets_sen').innerHTML = globalPackets; 
-	        document.querySelector('dd#packets_sen_sec').innerHTML = packrate; 
+	        if (document.querySelector('dd#biterate_sen') != null) {
+		        document.querySelector('dd#biterate_sen').innerHTML = globalBytes; 
+		        document.querySelector('dd#biterate_sen_sec').innerHTML = byterate; 
+		        document.querySelector('dd#packets_sen').innerHTML = globalPackets; 
+		        document.querySelector('dd#packets_sen_sec').innerHTML = packrate; 
+	        }
 
 	        byterateSeries.addPoint(now, byterate);
 	        byterateGraph.setDataSeries([byterateSeries]);
 	        byterateGraph.updateEndDate();
 
-	        packetSeries.addPoint(now, packrate);
-	        packetGraph.setDataSeries([packetSeries]);
-	        packetGraph.updateEndDate();
+	        if (packetSeries != null) {
+		        packetSeries.addPoint(now, packrate);
+		        packetGraph.setDataSeries([packetSeries]);
+		        packetGraph.updateEndDate();
+			}
 		}, 1000);
 	}
 
@@ -56,12 +77,12 @@ function sentDisplay(newPeer) {
 	  if (!newPeer) {
 	    return;
 	  }
-
 	  newPeer.connection.getStats(null).then(function(res) {
 	    Object.keys(res).forEach(function(key) {
 	      var report = res[key];
 
-	      if ((report.type === 'outboundrtp') ||
+	      if ((report.type === 'googCandidatePair') ||
+	    	  (report.type === 'outboundrtp') ||
 	          (report.type === 'outbound-rtp') ||
 	          (report.type === 'ssrc' && report.bytesSent)) 
 	      {
@@ -79,6 +100,8 @@ function sentDisplay(newPeer) {
 	  });
 	}, 1000);
 }
+var globalRecBytes = -1; 
+var globalRecPackets = -1;
 
 function receivedDisplay(newPeer) {
 	var lastResult;
@@ -99,8 +122,9 @@ function receivedDisplay(newPeer) {
 	    Object.keys(res).forEach(function(key) {
 	      var report = res[key];
 	      var now = report.timestamp;
-
-	      if ((report.type === 'outboundrtp') ||
+	      
+	      if ((report.type === 'googCandidatePair') ||
+	    	  (report.type === 'outboundrtp') ||
 	          (report.type === 'outbound-rtp') ||
 	          (report.type === 'ssrc' && report.bytesReceived)) {
 
@@ -110,12 +134,17 @@ function receivedDisplay(newPeer) {
 	        if (lastResult && lastResult[report.id]) {
 
 	          var byterate = (bytes - lastResult[report.id].bytesReceived);
+	          var packrate = (packets - lastResult[report.id].packetsReceived);
+
 
 	          document.querySelector('dd#biterate_rec').innerHTML = bytes; 
 	          document.querySelector('dd#biterate_rec_sec').innerHTML = bytes - lastResult[report.id].bytesReceived; 
 	          document.querySelector('dd#packets_rec').innerHTML = packets; 
 	          document.querySelector('dd#packets_rec_sec').innerHTML = packets - lastResult[report.id].packetsReceived; 
 
+	          globalBytes += byterate;
+	          globalPackets += packrate;
+	          
 	          byterateSeries.addPoint(now, byterate);
 	          byterateGraph.setDataSeries([byterateSeries]);
 	          byterateGraph.updateEndDate();

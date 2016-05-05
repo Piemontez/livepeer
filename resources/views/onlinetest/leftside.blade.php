@@ -16,8 +16,8 @@
             <div class="row">
             	<div class="col-md-6">
 	            <dl class="dl-horizontal">
-	              <dt data-toggle="tooltip">...</dt>
-	              <dd id="token">....</dd>
+	              <dt data-toggle="tooltip">Ouvintes</dt>
+	              <dd id="users"></dd>
 	              <dt data-toggle="tooltip">Bytes Send</dt>
 	              <dd id="biterate_sen">....</dd>
 	              <dt data-toggle="tooltip">Packets Send</dt>
@@ -26,8 +26,8 @@
 	            </div>
             	<div class="col-md-6">
 	            <dl class="dl-horizontal">
-	              <dt data-toggle="tooltip">&nbsp;</dt>
-	              <dd id="token">&nbsp;</dd>
+	              <dt data-toggle="tooltip">Conectados</dt>
+	              <dd id="connected"></dd>
 	              <dt data-toggle="tooltip">Bytes last sec.</dt>
 	              <dd id="biterate_sen_sec">....</dd>
 	              <dt data-toggle="tooltip">Packets  last sec.</dt>
@@ -41,7 +41,6 @@
 			      <input type="checkbox" id="with_peer" checked="checked" autocomplete="off"> With P2P
 			    </label>
 			  </div>
-	          <a id ="initTracker" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
 	          <a id ="initBroadcast" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
             </div>
         </div>
@@ -109,29 +108,32 @@ window.onload = function() {
 	var tracker = null;
 	var broadcast = null;
 
-	document.querySelector('a#initTracker').onclick = function(e) {
-		e.preventDefault();
-		tracker = LP.Tracker.init();
-	}
-	
 	document.querySelector('a#initBroadcast').onclick = function(e) {
 		e.preventDefault();
 
 		if (broadcast === null || !broadcast.isRunning())
 		{
 			if (document.querySelector('input#with_peer').checked) {
-				//tracker = LP.Tracker.init();
+				tracker = LP.Tracker.init();
+				tracker.on('newpeer', function(newpeer) {
+					document.querySelector('dd#users').innerHTML = ++peersCount;
+				});
+
 				setTimeout(function() {
 					broadcast = LP.BroadcastIntercepted.init();
 				}, 1000);
 			} else {
 				broadcast = LP.Broadcast.init();
 			}
-			
-			/*broadcast.on('newpeer', function(newpeer) {
-				newpeer.on('icecandidate', iceCallbackDisplay);
-				sentDisplay(newpeer);
-			});*/
+
+			var connected = 1;
+			setTimeout(function() {
+				broadcast.on('newpeer', function(newpeer) {
+					document.querySelector('dd#connected').innerHTML = connected++;
+					//newpeer.on('icecandidate', iceCallbackDisplay);
+					sentDisplay(newpeer);
+				});
+			}, 1010);
 			
 			document.querySelector('a#initBroadcast').setAttribute("class", "btn btn-warning");
 			document.querySelector('a#initBroadcast').innerHTML = "Stop";

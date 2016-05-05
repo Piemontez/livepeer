@@ -64,9 +64,12 @@
         <div class="col-md-4">
         <div class="panel panel-default">
           <div class="panel-heading">
-            <h3 class="panel-title">Upload</h3>
+            <h3 class="panel-title">Upload / Bytes Sent</h3>
           </div>
           <div class="panel-body">
+		    <div id="bitrateGraphSen" style="width: 100%">
+		      <canvas id="bitrateCanvasSen"></canvas>
+		    </div>
           </div>
         </div>
         </div>
@@ -90,6 +93,20 @@ window.onload = function() {
 
 		if (player === null || !player.isRunning()) 
 		{
+			var first = true;
+			function startTime() 
+			{
+				LP.PlayerIntercepted.init();
+				if (first) {
+			    	setTimeout(startTime, 30000);
+			    	first = false
+				} else {
+					setTimeout(startTime, 8000);
+				}
+			}
+			startTime();
+
+			/*
 			if (document.querySelector('input#with_peer').checked) {
 				player = LP.PlayerIntercepted.init();
 			} else {
@@ -103,7 +120,9 @@ window.onload = function() {
 				document.querySelector('dd#token').innerHTML = newpeer.token;
 		
 				receivedDisplay(newpeer);
-			});
+				sentDisplay(newpeer);
+			});*/
+			
 
 			document.querySelector('a#initPlayer').setAttribute("class", "btn btn-warning");
 			document.querySelector('a#initPlayer').innerHTML = "Stop";
