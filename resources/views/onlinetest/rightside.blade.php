@@ -39,7 +39,7 @@
 	        <div class="pull-right form-inline">
 	          <div class="checkbox">
 			    <label>
-			      <input type="checkbox" id="with_peer" checked="checked" autocomplete="off"> With P2P
+			      <input type="checkbox" id="with_peer" autocomplete="off"> With P2P
 			    </label>
 			  </div>
 	          <a id="initPlayer" class="btn btn-primary" role='button'><i class="fa fa-play"></i> Start</a>
@@ -93,10 +93,12 @@ window.onload = function() {
 
 		if (player === null || !player.isRunning()) 
 		{
+			
 			var first = true;
 			function startTime() 
 			{
-				LP.PlayerIntercepted.init();
+				//LP.PlayerIntercepted.init();
+				LP.Player.init();
 				if (first) {
 			    	setTimeout(startTime, 30000);
 			    	first = false
@@ -105,16 +107,13 @@ window.onload = function() {
 				}
 			}
 			startTime();
-
-			/*
-			if (document.querySelector('input#with_peer').checked) {
+			
+			
+			/*if (document.querySelector('input#with_peer').checked) {
 				player = LP.PlayerIntercepted.init();
 			} else {
 				player = LP.Player.init();
-			}
-			//var audio2 = document.querySelector('audio#audio2');
-			//audio2.srcObject = player.streamDestination;
-			
+			}			
 			
 			player.on('newpeer', function(newpeer) {
 				document.querySelector('dd#token').innerHTML = newpeer.token;

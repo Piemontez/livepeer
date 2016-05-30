@@ -38,7 +38,7 @@
 	        <div class="pull-right form-inline">
 	          <div class="checkbox">
 			    <label>
-			      <input type="checkbox" id="with_peer" checked="checked" autocomplete="off"> With P2P
+			      <input type="checkbox" id="with_peer" autocomplete="off"> With P2P
 			    </label>
 			  </div>
 	          <a id ="initBroadcast" class="btn btn-primary" href="#" role="button">Start &raquo;</a>
@@ -126,10 +126,10 @@ window.onload = function() {
 				broadcast = LP.Broadcast.init();
 			}
 
-			var connected = 1;
 			setTimeout(function() {
 				broadcast.on('newpeer', function(newpeer) {
-					document.querySelector('dd#connected').innerHTML = connected++;
+					document.querySelector('dd#users').innerHTML = ++connected;
+					document.querySelector('dd#connected').innerHTML = connected;
 					//newpeer.on('icecandidate', iceCallbackDisplay);
 					sentDisplay(newpeer);
 				});

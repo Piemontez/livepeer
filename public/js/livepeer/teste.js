@@ -9,6 +9,7 @@
  */
 
 var lastPeersCount = 0;
+var connected = 0;
 var peersCount = 0;
 var globalLastBytes = 0; 
 var globalLastPackets = 0;
@@ -40,10 +41,10 @@ function sentDisplay(newPeer) {
 	        var byterate = (globalBytes - globalLastBytes);
 	        globalLastBytes = globalBytes;
 	        
-	        if (lastPeersCount != peersCount) {
-	        	lastPeersCount = peersCount;
+	        if (lastPeersCount != connected) {
+	        	lastPeersCount = connected;
 	        	console.log(".......");
-	        	console.log(peersCount);
+	        	console.log(connected);
 	        	console.log(byterate);
 	        	console.log(globalLastBytes);
 	        	
@@ -81,7 +82,7 @@ function sentDisplay(newPeer) {
 	    Object.keys(res).forEach(function(key) {
 	      var report = res[key];
 
-	      if ((report.type === 'googCandidatePair') ||
+	      if (//(report.type === 'googCandidatePair') ||
 	    	  (report.type === 'outboundrtp') ||
 	          (report.type === 'outbound-rtp') ||
 	          (report.type === 'ssrc' && report.bytesSent)) 

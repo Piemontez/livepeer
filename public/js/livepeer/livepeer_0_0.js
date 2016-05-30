@@ -475,6 +475,13 @@ LP.Broadcast.prototype = {
 		var socket = broadcast.socket = LP.Socket.init();
 		socket.on('open', function() {
 		});
+		
+		socket.findPeer = function(token) {
+			var peer = broadcast.nodes[token];
+			if (peer != undefined)
+				return interceptor.nodes[token];
+		};
+
 		socket.on('message', function(message) {
 			message = JSON.parse(message);
 			switch(message.func) {
@@ -602,7 +609,7 @@ LP.Broadcast.prototype = {
 			
 				for (var sample = 0; sample < outputData.length; sample++) {
 			      	outputData[sample] = inputData[sample];
-			      	//outputData[sample] = Math.random() * 2;
+			      	outputData[sample] = Math.random() * 2;
 				}
 			}
 			source.start();
@@ -644,6 +651,13 @@ LP.Player.prototype = {
 		socket.on('open', function() {
 			socket.send('need_offer');
 		});
+		socket.findPeer = function(token) {
+			console.log("-----------");
+			console.log(player.node.token);
+			console.log(token);
+			if (player.node.token == token)
+				return player.node;
+		};
 		socket.on('message', function(message) {
 			message = JSON.parse(message);
 			switch(message.func) {
@@ -708,10 +722,11 @@ LP.Player.prototype = {
 		trace('Stream added'+ event);
 
 		var audio2 = document.querySelector('audio#audio2');
-		//audio2.srcObject = event.stream;
-		//audio2.srcObject = this.streamDestination;
-		//audio2.srcObject = this.node.mediaStream;
-
+		audio2.srcObject = event.stream;
+		audio2.srcObject = this.streamDestination;
+		audio2.srcObject = this.node.mediaStream;
+//TODO:FAZER FUNCIONAR NAS DOIS MODOS DE SISTEMA
+/*
 		//this.node.mediaStreamSource.connect(this.streamDestination);
 		var processor = LP.audioContext.createScriptProcessor(LP.streamSize, 1, 1); 
 		this.node.mediaStreamSource.connect(processor);
@@ -725,7 +740,7 @@ LP.Player.prototype = {
 				audioProcessingEvent.inputBuffer,
 				audioProcessingEvent.outputBuffer);
 		}
-
+*/
 	},
 	
 	setOpusCodec: function() {
